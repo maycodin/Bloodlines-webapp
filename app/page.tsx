@@ -1,9 +1,11 @@
+import HeroSection from '@/components/HeroSection'
 import Navbar from '@/components/Navbar'
 import Image from 'next/image'
+import AboutSection from '@/components/AboutSection'
 
 export default function LandingPage() {
   return (
-    <main className="w-full h-screen overflow-hidden">
+    <main className="w-full h-screen">
       <div className="flex relative">
       <Image
         src="/Leftside.png"
@@ -20,11 +22,9 @@ export default function LandingPage() {
         className="absolute -top-5 left-177.5 rounded-bl-[300px]"
       />
       </div>
-      <nav>
-
-      </nav>
       <Navbar />
-    
+      <HeroSection />
+      <AboutSection />
     </main>
     
   )
