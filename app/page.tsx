@@ -2,6 +2,7 @@ import HeroSection from '@/components/HeroSection'
 import Navbar from '@/components/Navbar'
 import Image from 'next/image'
 import AboutSection from '@/components/AboutSection'
+import ResourcesSection from '@/components/ResourceSection'
 
 export default function LandingPage() {
   return (
@@ -25,6 +26,7 @@ export default function LandingPage() {
       <Navbar />
       <HeroSection />
       <AboutSection />
+      <ResourcesSection />
     </main>
     
   )
