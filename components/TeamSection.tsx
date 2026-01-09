@@ -123,7 +123,7 @@ export default function OurTeam() {
   ];
 
   return (
-    <section className="py-16 lg:py-20 px-4 sm:px-6 lg:px-8 bg-linear-to-b from-gray-50 to-white">
+    <section className="py-8 lg:py-12 px-4 sm:px-6 lg:px-2 bg-linear-to-b bg-white">
       <div className="max-w-7xl mx-auto">
         {/* Header Section */}
         <div className="mb-2 ml-100">
@@ -137,7 +137,7 @@ export default function OurTeam() {
           </h2>
         </div>
         <div className="mb-16 lg:mb-20">
-          <div className="flex h-100 lg:h-125 gap-4 lg:gap-6">
+          <div className="flex h-100 lg:h-125 gap-2 lg:gap-3">
             {teamMembers.map((member, index) => (
               <TeamMember
                 key={index}
@@ -147,11 +147,6 @@ export default function OurTeam() {
                 onLeave={() => setExpandedIndex(null)}
               />
             ))}
-          </div>
-          
-          <div className="text-center mt-6 text-gray-500 text-sm">
-            <p className="lg:hidden">Tap on any team member to learn more</p>
-            <p className="hidden lg:block">Hover over any team member to learn more about them</p>
           </div>
         </div>
   
