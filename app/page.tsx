@@ -3,6 +3,8 @@ import Navbar from '@/components/Navbar'
 import Image from 'next/image'
 import AboutSection from '@/components/AboutSection'
 import ResourcesSection from '@/components/ResourceSection'
+import QuestionsSection from '@/components/QuestionsSection'
+import TestimonialsSection from '@/components/TestimonialSection'
 
 export default function LandingPage() {
   return (
@@ -27,6 +29,8 @@ export default function LandingPage() {
       <HeroSection />
       <AboutSection />
       <ResourcesSection />
+      <QuestionsSection />
+      <TestimonialsSection />
     </main>
     
   )
