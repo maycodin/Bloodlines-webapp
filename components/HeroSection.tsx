@@ -25,7 +25,7 @@ const HeroSection = () => {
           </div>
           <div className="flex flex-col sm:flex-row gap-4 mt-8">
             <Link
-              href="/join"
+              href="/RegisterPage"
               className="group bg-[#C91E1E] items-center justify-center px-8 py-4 text-sm/snug font-bold text-white from-red-600 to-red-700 rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-300 transform hover:-translate-y-1 shadow-xl hover:shadow-2xl"
             >
               Join the Community
