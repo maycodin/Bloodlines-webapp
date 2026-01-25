@@ -8,7 +8,7 @@ const AuthNavbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const navItems = [
-    { label: "Products", href: "/products" },
+    { label: "Products", href: "/BridgerDashboard" },
     { label: "Resources", href: "/resources" },
     { label: "Contact us", href: "/contact" },
   ];
