@@ -2,21 +2,22 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import AuthNavbar from "@/components/AuthNavbar";
+import Link from "next/link";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>(
+    {}
+  );
 
   const validate = () => {
     const err: typeof errors = {};
 
     if (!email) err.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(email))
-      err.email = "Enter a valid email";
+    else if (!/\S+@\S+\.\S+/.test(email)) err.email = "Enter a valid email";
 
     if (!password) err.password = "Password is required";
 
@@ -33,12 +34,9 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen">
-      <AuthNavbar />
-
-      <section className="min-h-[calc(100vh-80px)] flex items-center">
+      <section className="min-h-[calc(100vh-80px)] p-10 md:py-16 flex items-center">
         <div className="mx-auto mb-10 w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-10">
-
-          <div className="hidden lg:block relative h-[650px]">
+          <div className="hidden lg:block relative h-162.5">
             <Image
               src="/Side.png"
               alt="Visual"
@@ -49,10 +47,9 @@ export default function LoginPage() {
 
           {/* Form */}
           <div className="bg-white p-10 md:px-10 md:py-20 relative">
-
             {/* DESIGN LINES */}
-            <div className="absolute top-0 left-138 w-1.25 h-px bg-gray-200" />
-            <div className="absolute bottom-0 left-0 w-1.25 h-2px bg-gray-200" />
+            <div className="absolute top-0 right-0 w-2 h-px bg-gray-200" />
+            <div className="absolute bottom-0 right-0 w-2 h-px bg-gray-200" />
             <div className="absolute right-0 top-0 h-full w-px bg-gray-200" />
 
             <h1 className="text-3xl font-semibold mb-2">Welcome Back!</h1>
@@ -61,9 +58,10 @@ export default function LoginPage() {
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-
               <div>
-                <label className="text-sm text-gray-600">Enter email address</label>
+                <label className="text-sm text-gray-600">
+                  Enter email address
+                </label>
                 <input
                   type="email"
                   className="input bg-gray-100 outline-none border-none focus:ring-0"
@@ -71,9 +69,7 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                 />
                 {errors.email && (
-                  <p className="text-xs text-red-500 mt-1">
-                    {errors.email}
-                  </p>
+                  <p className="text-xs text-red-500 mt-1">{errors.email}</p>
                 )}
               </div>
 
@@ -98,14 +94,11 @@ export default function LoginPage() {
                 </div>
 
                 {errors.password && (
-                  <p className="text-xs text-red-500 mt-1">
-                    {errors.password}
-                  </p>
+                  <p className="text-xs text-red-500 mt-1">{errors.password}</p>
                 )}
               </div>
 
               <div className="flex items-center justify-between text-xs">
-
                 <label className="flex items-center gap-2 text-gray-600">
                   <input
                     type="checkbox"
@@ -115,13 +108,12 @@ export default function LoginPage() {
                   />
                   Remember me
                 </label>
-
-                <button
-                  type="button"
+                <Link
+                  href="/RegisterPage/Forgot-password"
                   className="text-gray-900 hover:underline"
                 >
                   Forgot your password?
-                </button>
+                </Link>
               </div>
 
               <button
@@ -133,11 +125,13 @@ export default function LoginPage() {
 
               <p className="text-xs text-center text-gray-600">
                 Don&apos;t have an account?{" "}
-                <span className="text-green-600 cursor-pointer">
+                <Link
+                  href="/RegisterPage/Signup"
+                  className="text-[#2d7c39] hover:underline font-medium"
+                >
                   Register
-                </span>
+                </Link>
               </p>
-
             </form>
           </div>
         </div>
