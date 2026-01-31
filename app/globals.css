@@ -9,6 +9,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-light-mint: #ebfff1;
+  --color-green: #2d7c39;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -32,6 +33,17 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+.step-arrow {
+  clip-path: polygon(
+    0% 0%,
+    90% 0%,
+    100% 50%,
+    90% 100%,
+    0% 100%
+  );
+  border-radius: 10px 0 0 10px;
 }
 
 .group:hover svg {

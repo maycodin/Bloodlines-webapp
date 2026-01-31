@@ -42,7 +42,7 @@ export default function Home() {
               </Link>
 
               <Link
-                href="/RegisterPage/login"
+                href="/RegisterPage/Login"
                 className="w-full sm:min-w-50 text-center bg-red-600 text-white py-3 rounded-md font-medium hover:bg-red-700 transition"
               >
                 Log in
