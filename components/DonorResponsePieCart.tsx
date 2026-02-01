@@ -40,7 +40,7 @@ export default function DonorResponsePieChart() {
       </div>
 
       {/* Chart and Legend */}
-      <div className="flex items-center h-44]">
+      <div className="flex items-center h-[calc(240px-4rem)]">
         {/* Donut Chart */}
         <div className="w-2/5 h-full pr-3">
           <div className="relative h-full">
