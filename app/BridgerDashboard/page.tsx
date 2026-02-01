@@ -6,6 +6,7 @@ import DonationFulfillmentRate from '@/components/DonationFulfillment';
 import CriticalBloodRequestCard, { BloodRequestType } from '@/components/CriticalBloodRequestCard';
 import PriorityContactForm from '@/components/PriorityContactForm';
 import SuccessModal from '@/components/SuccessModal'; 
+import BloodInventoryDashboard from '@/components/BloodInventory';
 const Dashboard = () => {
   const [isThereActiveRequest, setIsThereActiveRequest] = useState(false);
   const [activePage, setActivePage] = useState('home');
@@ -64,7 +65,7 @@ const Dashboard = () => {
 
   const handleEdit = (id: string | number) => {
     console.log('Edit request:', id);
-    // Add your edit logic here
+    
   };
 
   // Handle page change from navbar
@@ -356,14 +357,16 @@ const Dashboard = () => {
         );
       
       case 'analytics':
-        return (
-          <div className="flex items-center justify-center h-96">
-            <div className="text-center">
-              <h1 className="text-2xl font-bold text-gray-800 mb-4">Analytics Page</h1>
-              <p className="text-gray-600">Analytics content will be displayed here.</p>
-            </div>
-          </div>
-        );
+  return (
+    <div className="flex items-center justify-center">
+      <BloodInventoryDashboard 
+        bloodRequests={bloodRequests}
+        handleConfirm={handleConfirm}
+        handleEdit={handleEdit}
+        setActivePage={setActivePage} // Optional: if you want the button to work
+      /> 
+    </div>
+  );
       
       case 'profile':
         return (
