@@ -199,7 +199,7 @@ export default function BloodInventoryDashboard({
                         dataKey="value" 
                         radius={[0, 4, 4, 0]}
                         barSize={16}
-                        background={{ fill: '#ECEFF1', radius: [0, 4, 4, 0] }}
+                        background={{ fill: '#ECEFF1' }}
                     >
                         {bloodTypeData.map((entry, index) => {
                         // Assign colors based on blood type
@@ -260,7 +260,7 @@ export default function BloodInventoryDashboard({
                         dataKey="value" 
                         radius={[0, 4, 4, 0]}
                         barSize={16}
-                        background={{ fill: '#ECEFF1', radius: [0, 4, 4, 0] }}
+                        background={{ fill: '#ECEFF1' }}
                     >
                         {urgencyData.map((entry, index) => {
                         // Assign colors based on urgency
