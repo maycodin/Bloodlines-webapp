@@ -9,6 +9,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-light-mint: #ebfff1;
+  --color-green: #2d7c39;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

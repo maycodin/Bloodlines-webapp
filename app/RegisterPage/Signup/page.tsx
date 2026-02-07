@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import AuthNavbar from "@/components/AuthNavbar";
 
 type FormData = {
   fullName: string;
@@ -79,32 +78,37 @@ export default function SignupPage() {
     index: number;
     currentStep: number;
   }) {
-    const active = currentStep === index;
+    const isActive = currentStep === index;
+    const isImageStep = index === 1;
 
     return (
       <div
-        className={`relative flex-1 py-2 text-center text-sm font-medium
-        ${active ? "bg-green-500 text-white" : "bg-green-50 text-gray-700"}
-        rounded-lg`}
+        className={`relative flex-1 py-2 text-center text-sm font-medium rounded-md
+          ${
+            isActive
+              ? isImageStep
+                ? "bg-transparent text-white"
+                : "bg-[#2d7c39] text-white"
+              : "bg-green-50 text-gray-700"
+          }`}
       >
-        Step {index}
-        {active && index === 1 && (
-          <span
-            className="absolute top-0 -right-3 w-0 h-0
-            border-t-18 border-t-transparent
-            border-b-18 border-b-transparent
-            border-l-12 border-l-green-500"
+        {isActive && isImageStep && (
+          <Image
+            src="/Rectangle.png"
+            alt="Visual"
+            fill
+            className="object-cover z-0"
           />
         )}
+
+        <span className="relative z-10">Step {index}</span>
       </div>
     );
   }
 
   return (
     <main className="min-h-screen">
-      <AuthNavbar />
-
-      <section className="min-h-[calc(100vh-80px)] p-10 md:py-10 flex items-center">
+      <section className="min-h-[calc(100vh-80px)] p-10 md:py-16 flex items-center">
         <div className="mx-auto w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="hidden lg:block relative h-162.5">
             <Image
@@ -116,10 +120,10 @@ export default function SignupPage() {
           </div>
 
           {/* Form */}
-          <div className="w-full max-w-lg bg-white p-10 md:py-20 relative text-sm">
+          <div className="w-full max-w-lg bg-white p-10 md:py-16 relative text-sm">
             {/* Design Lines */}
-            <div className="absolute top-0 left-0 w-full h-px bg-gray-200" />
-            <div className="absolute bottom-0 left-0 w-full h-px bg-gray-200" />
+            <div className="absolute top-0 right-0 w-2 h-px bg-gray-200" />
+            <div className="absolute bottom-0 right-0 w-2 h-px bg-gray-200" />
             <div className="absolute right-0 top-0 h-full w-px bg-gray-200" />
 
             <h1 className="text-3xl font-semibold mb-2">Join BloodLines</h1>
@@ -128,7 +132,7 @@ export default function SignupPage() {
             </p>
 
             {/* STEPS */}
-            <div className="flex gap-2 mb-8 bg-green-50 p-2 rounded-xl">
+            <div className="flex gap-0.5 mb-8 bg-green-50 rounded-xl">
               <StepBadge index={1} currentStep={step} />
               <StepBadge index={2} currentStep={step} />
               <StepBadge index={3} currentStep={step} />
@@ -172,7 +176,7 @@ export default function SignupPage() {
                 <button
                   disabled={!step1Complete}
                   onClick={() => setStep(2)}
-                  className={`w-full py-3 mt-10 rounded-lg font-medium
+                  className={`w-full py-3 mt-20 rounded-lg font-medium
       ${step1Complete ? "bg-red-600 text-white" : "bg-gray-400 text-white"}`}
                 >
                   Continue
@@ -261,7 +265,7 @@ export default function SignupPage() {
                 <button
                   disabled={!step2Complete}
                   onClick={() => setStep(3)}
-                  className={`w-full py-3 mt-10 rounded-lg font-medium
+                  className={`w-full py-3 rounded-lg font-medium
       ${step2Complete ? "bg-red-600 text-white" : "bg-gray-400 text-white"}`}
                 >
                   Continue
@@ -297,7 +301,7 @@ export default function SignupPage() {
 
                   <div className="flex-1 h-1.5 bg-gray-300 rounded">
                     <div
-                      className="h-full bg-green-600 transition-all"
+                      className="h-full bg-[#2d7c39] transition-all"
                       style={{
                         width: `${(passwordScore / 3) * 100}%`,
                       }}
@@ -358,7 +362,7 @@ export default function SignupPage() {
 
                 <button
                   disabled={!step3Complete}
-                  className={`w-full py-3 mt-8 rounded-lg font-medium
+                  className={`w-full py-3 rounded-lg font-medium
       ${step3Complete ? "bg-red-600 text-white" : "bg-gray-400 text-white"}`}
                 >
                   Create an account
@@ -376,7 +380,7 @@ function Checklist({ ok, label }: { ok: boolean; label: string }) {
   return (
     <div
       className={`flex items-center gap-2 ${
-        ok ? "text-green-600" : "text-red-500"
+        ok ? "text-[#2d7c39]" : "text-red-500"
       }`}
     >
       <span>{ok ? "✔" : "✖"}</span>
