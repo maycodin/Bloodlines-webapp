@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 type StepBadgeProps = {
   index: number;
   currentStep: number;
@@ -35,11 +37,13 @@ export default function StepBadge({
         <span
           className="absolute top-0 right-0 h-full w-6
           bg-green-500"
-          style={{
-            clipPath:
-              "polygon(0 0, 100% 50%, 0 100%)",
-          }}
-        />
+>             <Image
+              src="/Rectangle.png"
+              alt="Visual"
+              fill
+              className="rounded-sm object-cover w-full h-full"
+            />
+       </span>
       )}
     </div>
   );
