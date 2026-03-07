@@ -1,17 +1,26 @@
 "use client"
 import React, { useState } from 'react';
-import { CheckCircle, Plus, Users, Calendar, HeartPulse } from 'lucide-react';
+import { CheckCircle, Plus, Users, Calendar, HeartPulse, CircleArrowUp } from 'lucide-react';
 import BridgerNavbar from '@/components/BridgerNavbar';
 import DonationFulfillmentRate from '@/components/DonationFulfillment';
 import CriticalBloodRequestCard, { BloodRequestType } from '@/components/CriticalBloodRequestCard';
 import PriorityContactForm from '@/components/PriorityContactForm';
 import SuccessModal from '@/components/SuccessModal'; 
 import BloodInventoryDashboard from '@/components/BloodInventory';
+
 const Dashboard = () => {
+  // Existing state
   const [isThereActiveRequest, setIsThereActiveRequest] = useState(false);
   const [activePage, setActivePage] = useState('home');
   const [bloodRequests, setBloodRequests] = useState<BloodRequestType[]>([]);
-  const [showSuccessModal, setShowSuccessModal] = useState(false); 
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  
+  // Profile form state - moved to top level
+  const [selectedRole, setSelectedRole] = useState('');
+  const [communityName, setCommunityName] = useState('');
+  const [facilityName, setFacilityName] = useState('');
+  const [facilityAddress, setFacilityAddress] = useState('');
+  const [reason, setReason] = useState('');
   
   const bloodInventory = [
     { type: 'O+', units: 45, status: 'good', color: '#1C7C3A' },
@@ -65,7 +74,6 @@ const Dashboard = () => {
 
   const handleEdit = (id: string | number) => {
     console.log('Edit request:', id);
-    
   };
 
   // Handle page change from navbar
@@ -93,6 +101,37 @@ const Dashboard = () => {
   // Close modal
   const handleCloseModal = () => {
     setShowSuccessModal(false);
+  };
+
+  // Profile handlers - moved to top level
+  const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedRole(e.target.value);
+    // Reset additional fields when role changes
+    setCommunityName('');
+    setFacilityName('');
+    setFacilityAddress('');
+  };
+
+  const handleProfileSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Handle form submission logic here
+    console.log({
+      role: selectedRole,
+      communityName: selectedRole === 'pulse-leader' ? communityName : undefined,
+      facilityName: selectedRole === 'bridger' ? facilityName : undefined,
+      facilityAddress: selectedRole === 'bridger' ? facilityAddress : undefined,
+      reason
+    });
+    
+    // Reset form after submission
+    setSelectedRole('');
+    setCommunityName('');
+    setFacilityName('');
+    setFacilityAddress('');
+    setReason('');
+    
+    // Show success message or modal
+    alert('Role upgrade request submitted successfully!');
   };
 
   // Render content based on active page
@@ -357,23 +396,190 @@ const Dashboard = () => {
         );
       
       case 'analytics':
-  return (
-    <div className="flex items-center justify-center">
-      <BloodInventoryDashboard 
-        bloodRequests={bloodRequests}
-        handleConfirm={handleConfirm}
-        handleEdit={handleEdit}
-        setActivePage={setActivePage} // Optional: if you want the button to work
-      /> 
-    </div>
-  );
+        return (
+          <div className="flex items-center justify-center">
+            <BloodInventoryDashboard 
+              bloodRequests={bloodRequests}
+              handleConfirm={handleConfirm}
+              handleEdit={handleEdit}
+              setActivePage={setActivePage}
+            /> 
+          </div>
+        );
       
       case 'profile':
         return (
-          <div className="flex items-center justify-center h-96">
-            <div className="text-center">
-              <h1 className="text-2xl font-bold text-gray-800 mb-4">Profile Page</h1>
-              <p className="text-gray-600">Profile content will be displayed here.</p>
+          <div className="mx-auto">
+            <div className="bg-white rounded-lg border border-[#D8D6D6] p-5">
+              {/* Profile Content */}
+              <div className="space-y-2">
+                <h1 className="text-lg font-bold text-gray-900">Profile Information</h1>
+                <div className="flex items-start gap-20 mb-2">
+                  {/* Full Name */}
+                  <div className="w-1/2">
+                    <p className="text-sm font-bold text-black mb-1">Full name</p>
+                    <p className="text-sm font-light text-gray-900">Maria Mustafa</p>
+                  </div>
+                  {/* Email */}
+                  <div className="w-1/2">
+                    <p className="text-sm font-bold text-black mb-1">Email address</p>
+                    <p className="text-sm font-light text-gray-900">Maria.Mustafa@gmail.com</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-20 mb-2">
+                  {/* Phone */}
+                  <div className="w-1/2">
+                    <p className="text-sm font-bold text-black mb-1">Phone</p>
+                    <p className="text-sm font-light text-gray-900">07032891653</p>
+                  </div>
+                  {/* Hospital */}
+                  <div className="w-1/2">
+                    <p className="text-sm font-bold text-black mb-1">Name of Hospital</p>
+                    <p className="text-sm font-light text-gray-900">Lagos, University Teaching Hospital</p>
+                    <p className="text-sm font-light text-gray-900mt-1">Idi-Araba, Lagos</p>
+                  </div>
+                </div>
+
+                {/* Edit Button */}
+                <button className="bg-[#C91E1E] text-white font-medium px-4 py-2 rounded-sm">Edit Profile</button>
+              </div>
+            </div>
+            
+            <div className="mt-8 bg-white rounded-lg border border-[#D8D6D6] p-5">
+              <div className="flex items-start gap-2 mb-4">
+                <CircleArrowUp className="w-6 h-6 text-[#1B59F8]" />
+                <h3 className="text-xl font-bold text-gray-900">Upgrade Your Role</h3>
+              </div>
+              <p className="text-black font-bold">
+                Request Role Upgrade
+              </p>
+              <p className="text-gray-600 mb-8">
+                Apply to become a Pulse Leader, Bridger, or Admin
+              </p>
+
+              <form onSubmit={handleProfileSubmit} className="space-y-6">
+                {/* Requested Role */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Requested Role <span className="text-[#C91E1E]">*</span>
+                  </label>
+                  <select 
+                    value={selectedRole}
+                    onChange={handleRoleChange}
+                    className="w-full bg-[#F4F2F2] p-3 border border-[#D8D6D6] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C91E1E] focus:border-transparent text-gray-700"
+                    required
+                  >
+                    <option value="" disabled>Select role type</option>
+                    <option value="pulse-leader">Pulse Leader</option>
+                    <option value="bridger">Bridger (Hospital Staff)</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+
+                {/* Conditional Fields for Pulse Leader */}
+                {selectedRole === 'pulse-leader' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Community Name <span className="text-[#C91E1E]">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={communityName}
+                      onChange={(e) => setCommunityName(e.target.value)}
+                      placeholder="Enter your community's name"
+                      className="w-full bg-[#F4F2F2] p-3 border border-[#D8D6D6] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C91E1E] focus:border-transparent text-gray-700 placeholder-gray-400"
+                      required={selectedRole === 'pulse-leader'}
+                    />
+                  </div>
+                )}
+
+                {/* Conditional Fields for Bridger (Hospital Staff) */}
+                {selectedRole === 'bridger' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Facility Name <span className="text-[#C91E1E]">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={facilityName}
+                        onChange={(e) => setFacilityName(e.target.value)}
+                        placeholder="Enter Hospital/clinic name"
+                        className="w-full bg-[#F4F2F2] p-3 border border-[#D8D6D6] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C91E1E] focus:border-transparent text-gray-700 placeholder-gray-400"
+                        required={selectedRole === 'bridger'}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Facility Address <span className="text-[#C91E1E]">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={facilityAddress}
+                        onChange={(e) => setFacilityAddress(e.target.value)}
+                        placeholder="Enter facility address"
+                        className="w-full bg-[#F4F2F2] p-3 border border-[#D8D6D6] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C91E1E] focus:border-transparent text-gray-700 placeholder-gray-400"
+                        required={selectedRole === 'bridger'}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Reason for Request */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reason for Request <span className="text-[#C91E1E]">*</span>
+                  </label>
+                  <textarea 
+                    rows={5}
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    className="w-full p-3 bg-[#F4F2F2] border border-[#D8D6D6] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C91E1E] focus:border-transparent text-gray-700 placeholder-gray-400 resize-none"
+                    placeholder="Please explain why you want to upgrade to this role and how you plan to contribute..."
+                    required
+                  />
+                </div>
+
+                {/* Info Message */}
+                <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-lg">
+                  <span className="text-blue-500 text-lg">🔑</span>
+                  <p className="text-sm text-blue-700">
+                    Role upgrade requests are reviewed by administrators. You will receive a notification once your request is processed.
+                  </p>
+                </div>
+
+                {/* Submit Button */}
+                <div className="flex justify-end">
+                  <button 
+                    type="submit"
+                    className="px-8 py-3 bg-[#C91E1E] text-white font-semibold rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    Submit Request
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div className="mt-4 bg-white rounded-lg border border-[#D8D6D6] p-5">
+              <div className="font-bold">Notification Preferences</div>
+                <div className="flex items-center justify-between mt-3 mb-3">
+                  <div className="space-y-1">
+                    <h1 className="font-semibold">Emmergency Alerts</h1>
+                    <span className="font-light">Critical Blood requests in your area</span>
+                  </div>
+                  <button className="border border-[#000000] rounded-lg py-2 px-4">
+                    Configure
+                  </button>
+                </div>
+                <div className="flex items-center justify-between mt-3 mb-3">
+                  <div className="space-y-1">
+                    <h1 className="font-semibold">Donation Reminders</h1>
+                    <span className="font-light">When you're eligible to donate again</span>
+                  </div>
+                  <button className="border border-[#000000] rounded-lg py-2 px-4">
+                    Configure
+                  </button>
+                </div>
             </div>
           </div>
         );
