@@ -9,7 +9,7 @@ const AuthNavbar = () => {
 
   const navItems = [
     { label: "Products", href: "/BridgerDashboard" },
-    { label: "Resources", href: "/resources" },
+    { label: "Resources", href: "/PulseLeader" },
     { label: "Contact us", href: "/contact" },
   ];
 
