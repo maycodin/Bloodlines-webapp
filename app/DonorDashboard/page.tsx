@@ -7,6 +7,8 @@ import SuccessModal from "@/components/SuccessModal";
 import CompleteProfile from "@/components/CompleteProfile";
 import DonorOverview from "@/components/DonorOverview";
 import NearbyRequests from "@/components/NearbyRequests";
+import ProfilePage from "@/components/ProfilePage";
+
 
 type Page = "home" | "resources" | "profile";
 
@@ -226,29 +228,14 @@ const DonorDashboard = () => {
         );
 
       case "profile":
-        return (
-          <div className="flex items-center justify-center h-96">
-            <div className="text-center">
-              <h1 className="text-2xl font-bold text-gray-800 mb-4">
-                Profile Page
-              </h1>
-              <p className="text-gray-600">
-                Profile content will be displayed here.
-              </p>
-            </div>
-          </div>
-        );
-
+        return <ProfilePage />;
+ 
       default:
         return (
           <div className="flex items-center justify-center h-96">
             <div className="text-center">
-              <h1 className="text-2xl font-bold text-gray-800 mb-4">
-                Page Not Found
-              </h1>
-              <p className="text-gray-600">
-                The requested page could not be found.
-              </p>
+              <h1 className="text-2xl font-bold text-gray-800 mb-4">Page Not Found</h1>
+              <p className="text-gray-600">The requested page could not be found.</p>
             </div>
           </div>
         );
