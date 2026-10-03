@@ -1,4 +1,3 @@
-// components/ProtectedRoute.tsx
 "use client";
 
 import { useAuth } from '@/app/contexts/AuthContext';
@@ -10,6 +9,14 @@ interface ProtectedRouteProps {
   allowedRoles?: string[];
 }
 
+// ✅ Helper function to convert PULSE_LEADER → pulse-leader
+const normalizeRole = (role: string): 'donor' | 'bridger' | 'pulse-leader' | 'admin' => {
+  if (!role) return 'donor';
+  const normalized = role.toLowerCase().replace(/_/g, '-');
+  const validRoles = ['donor', 'bridger', 'pulse-leader', 'admin'];
+  return validRoles.includes(normalized) ? normalized as any : 'donor';
+};
+
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }) => {
   const { user, isLoading, isAuthenticated } = useAuth();
   const router = useRouter();
@@ -17,21 +24,21 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
-    // CRITICAL: Wait for loading to complete
     if (isLoading) {
       console.log('⏳ ProtectedRoute: Auth is loading, waiting...');
       return;
     }
 
-    // Check if user is authenticated
     const isAuth = isAuthenticated || !!user;
-    const userRole = user?.role || 'donor';
+    // ✅ Normalize PULSE_LEADER → pulse-leader
+    const userRole = normalizeRole(user?.role || 'donor');
 
     console.log('🔍 ProtectedRoute: Auth check', {
       isLoading,
       isAuthenticated,
       isAuth,
       userRole,
+      originalRole: user?.role,
       hasUser: !!user,
       pathname,
       allowedRoles
@@ -44,22 +51,24 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
       return;
     }
 
-    // If allowedRoles is provided and user role is not in the list
-    if (allowedRoles && !allowedRoles.includes(userRole)) {
-      console.log(`🚫 Role ${userRole} not allowed. Allowed: ${allowedRoles.join(', ')}`);
-      setIsRedirecting(true);
-      const redirectMap: Record<string, string> = {
-        donor: '/DonorDashboard',
-        bridger: '/BridgerDashboard',
-        'pulse-leader': '/PulseLeader',
-        admin: '/admin/dashboard',
-      };
-      const redirectPath = redirectMap[userRole] || '/DonorDashboard';
-      router.push(redirectPath);
-      return;
-    }
+    // ✅ Normalize allowedRoles for comparison
+    const normalizedAllowedRoles = allowedRoles?.map(role => normalizeRole(role)) || [];
 
-    // Access granted
+    if (normalizedAllowedRoles.length > 0 && !normalizedAllowedRoles.includes(userRole)) {
+  console.log(`🚫 Role ${userRole} not allowed. Allowed: ${normalizedAllowedRoles.join(', ')}`);
+  setIsRedirecting(true);
+  const redirectMap: Record<string, string> = {
+    donor: '/DonorDashboard',
+    bridger: '/BridgerDashboard',
+    'pulse-leader': '/PulseLeader',
+    admin: '/admin/dashboard',
+  };
+  const redirectPath = redirectMap[userRole] || '/DonorDashboard';
+  // ✅ Use window.location for hard redirect
+  window.location.href = redirectPath;
+  return;
+}
+
     console.log('✅ Access granted for role:', userRole);
     setIsRedirecting(false);
     
@@ -79,8 +88,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
   const isAuth = isAuthenticated || !!user;
   if (!isAuth) return null;
   
-  const userRole = user?.role || 'donor';
-  if (allowedRoles && !allowedRoles.includes(userRole)) return null;
+  const userRole = normalizeRole(user?.role || 'donor');
+  const normalizedAllowedRoles = allowedRoles?.map(role => normalizeRole(role)) || [];
+  
+  if (normalizedAllowedRoles.length > 0 && !normalizedAllowedRoles.includes(userRole)) return null;
 
   return <>{children}</>;
 };

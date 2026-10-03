@@ -1,113 +1,56 @@
+// components/NearbyRequests.tsx
+"use client";
+
 import { useState, useEffect } from "react";
 import { Bell, MapPin, Clock } from "lucide-react";
 import RequestAcceptedModal from "./RequestAcceptedModal";
+import { BloodRequest } from "@/lib/api";
 
 type Urgency = "Critical" | "Urgent" | "Scheduled";
 
-type Request = {
-  id: number;
-  urgency: Urgency;
-  bloodType: string;
-  unitsNeeded: number;
-  hospital: {
-    name: string;
-    address: string;
-    phone: string;
-    distance: string;
-    travelTime: string;
-  };
-  timePosted: string;
-  message: string;
-};
+interface NearbyRequestsProps {
+  requests?: BloodRequest[];
+  loading?: boolean;
+  onAccept?: (requestId: string) => void;
+}
 
 // Style maps (urgency-driven)
-
-const urgencyBadge: Record<Urgency, string> = {
-  Critical: "bg-[#C91E1E] text-white",
-  Urgent: "bg-[#EA580C] text-white",
-  Scheduled: "bg-gray-200 text-gray-700",
+const urgencyBadge: Record<string, string> = {
+  critical: "bg-[#C91E1E] text-white",
+  high: "bg-[#EA580C] text-white",
+  medium: "bg-yellow-500 text-white",
+  low: "bg-gray-200 text-gray-700",
 };
 
-const messageBox: Record<Urgency, string> = {
-  Critical: "bg-red-50 border-red-300 text-[#C91E1E]",
-  Urgent: "bg-yellow-50 border-yellow-300 text-yellow-800",
-  Scheduled: "bg-gray-100 border-gray-300 text-gray-700",
+const messageBox: Record<string, string> = {
+  critical: "bg-red-50 border-red-300 text-[#C91E1E]",
+  high: "bg-yellow-50 border-yellow-300 text-yellow-800",
+  medium: "bg-blue-50 border-blue-300 text-blue-800",
+  low: "bg-gray-100 border-gray-300 text-gray-700",
 };
 
-const cardBorder: Record<Urgency, string> = {
-  Critical: "border-red-300",
-  Urgent: "border-gray-300",
-  Scheduled: "border-gray-300",
+const cardBorder: Record<string, string> = {
+  critical: "border-red-300",
+  high: "border-orange-300",
+  medium: "border-blue-300",
+  low: "border-gray-300",
 };
 
-// Mock data
+// Map urgency levels to display labels
+const urgencyLabels: Record<string, string> = {
+  critical: "Critical",
+  high: "Urgent",
+  medium: "Moderate",
+  low: "Scheduled",
+};
 
-const REQUESTS: Request[] = [
-  {
-    id: 1,
-    urgency: "Critical",
-    bloodType: "O-",
-    unitsNeeded: 2,
-    hospital: {
-      name: "City General Hospital",
-      address: "789 Hospital Drive, Lagos State, Nigeria",
-      phone: "234-703-289-1651",
-      distance: "2.5 km",
-      travelTime: "8 minutes",
-    },
-    timePosted: "Posted 5 min ago",
-    message: "ICU patient - Car accident victim needs immediate transfusion",
-  },
-  {
-    id: 2,
-    urgency: "Urgent",
-    bloodType: "A+",
-    unitsNeeded: 2,
-    hospital: {
-      name: "City General Hospital",
-      address: "789 Hospital Drive, Lagos State, Nigeria",
-      phone: "234-703-289-1651",
-      distance: "2.5 km",
-      travelTime: "8 minutes",
-    },
-    timePosted: "Posted 5 min ago",
-    message: "Maternity emergency - Expecting mother with twins",
-  },
-  {
-    id: 3,
-    urgency: "Scheduled",
-    bloodType: "AB+",
-    unitsNeeded: 2,
-    hospital: {
-      name: "City General Hospital",
-      address: "789 Hospital Drive, Lagos State, Nigeria",
-      phone: "234-703-289-1651",
-      distance: "2.5 km",
-      travelTime: "8 minutes",
-    },
-    timePosted: "Posted 5 min ago",
-    message: "Chemotherapy patient - Scheduled treatment next week",
-  },
-  {
-    id: 4,
-    urgency: "Critical",
-    bloodType: "B-",
-    unitsNeeded: 2,
-    hospital: {
-      name: "City General Hospital",
-      address: "789 Hospital Drive, Lagos State, Nigeria",
-      phone: "234-703-289-1651",
-      distance: "2.5 km",
-      travelTime: "8 minutes",
-    },
-    timePosted: "Posted 5 min ago",
-    message: "CRITICAL - Multiple trauma patients from construction accident",
-  },
-];
-
-const NearbyRequests = () => {
-  const [hiddenIds, setHiddenIds] = useState<number[]>([]);
-  const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
+const NearbyRequests: React.FC<NearbyRequestsProps> = ({ 
+  requests = [], 
+  loading = false,
+  onAccept 
+}) => {
+  const [hiddenIds, setHiddenIds] = useState<string[]>([]);
+  const [selectedRequest, setSelectedRequest] = useState<BloodRequest | null>(null);
 
   // Lock body scroll while modal is open
   useEffect(() => {
@@ -117,7 +60,30 @@ const NearbyRequests = () => {
     };
   }, [selectedRequest]);
 
-  const visibleRequests = REQUESTS.filter((r) => !hiddenIds.includes(r.id));
+  const visibleRequests = requests.filter((r) => !hiddenIds.includes(r.id));
+
+  const handleAccept = (request: BloodRequest) => {
+    setSelectedRequest(request);
+    if (onAccept) {
+      onAccept(request.id);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl p-6 shadow-md border border-[#D8D6D6] mt-8">
+        <div className="flex items-center justify-center h-32">
+          <div className="text-center">
+            <svg className="animate-spin h-8 w-8 text-red-600 mx-auto mb-2" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p className="text-gray-500 text-sm">Loading nearby requests...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -135,79 +101,91 @@ const NearbyRequests = () => {
         </div>
 
         <p className="text-sm text-gray-500 mb-6">
-          These patients need your help. Click &quot;Accept Request&quot; to see
+          These patients need your help. Click "Accept Request" to see
           full details and navigate to the hospital.
         </p>
 
         {/* Request list */}
-        <div className="flex flex-col gap-4">
-          {visibleRequests.map((req) => (
-            <div
-              key={req.id}
-              className={`border rounded-lg p-4 flex flex-col md:flex-row md:justify-between gap-4 ${
-                cardBorder[req.urgency]
-              }`}
-            >
-              {/* Left content */}
-              <div className="flex-1 space-y-3">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span
-                    className={`text-sm px-3 py-1 rounded-md font-medium ${
-                      urgencyBadge[req.urgency]
-                    }`}
-                  >
-                    {req.urgency}
-                  </span>
-
-                  <span className="border border-[#C91E1E] text-[#C91E1E] text-sm px-2 py-1 rounded-md">
-                    {req.bloodType}
-                  </span>
-
-                  <span className="text-sm text-gray-500">
-                    {req.unitsNeeded} units needed
-                  </span>
-                </div>
-
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-gray-500">
-                  <div className="flex items-center gap-1">
-                    <MapPin className="w-3 h-3" />
-                    {req.hospital.name}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {req.timePosted}
-                  </div>
-                </div>
-
+        {visibleRequests.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-gray-500">No active blood requests at the moment.</p>
+            <p className="text-sm text-gray-400 mt-1">Check back later!</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {visibleRequests.map((req) => {
+              const urgency = req.urgency || 'low';
+              const displayUrgency = urgencyLabels[urgency] || 'Scheduled';
+              
+              return (
                 <div
-                  className={`border rounded-md p-3 text-sm leading-relaxed ${
-                    messageBox[req.urgency]
+                  key={req.id}
+                  className={`border rounded-lg p-4 flex flex-col md:flex-row md:justify-between gap-4 ${
+                    cardBorder[urgency] || 'border-gray-300'
                   }`}
                 >
-                  {req.urgency === "Critical" && "🚨 "}
-                  {req.message}
+                  {/* Left content */}
+                  <div className="flex-1 space-y-3">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span
+                        className={`text-sm px-3 py-1 rounded-md font-medium ${
+                          urgencyBadge[urgency] || 'bg-gray-200 text-gray-700'
+                        }`}
+                      >
+                        {displayUrgency}
+                      </span>
+
+                      <span className="border border-[#C91E1E] text-[#C91E1E] text-sm px-2 py-1 rounded-md">
+                        {req.bloodType}
+                      </span>
+
+                      <span className="text-sm text-gray-500">
+                        {req.unitsNeeded} units needed
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-gray-500">
+                      <div className="flex items-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        {req.hospitalName || 'Hospital'}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {new Date(req.createdAt).toLocaleDateString()}
+                      </div>
+                    </div>
+
+                    <div
+                      className={`border rounded-md p-3 text-sm leading-relaxed ${
+                        messageBox[urgency] || 'bg-gray-100 border-gray-300 text-gray-700'
+                      }`}
+                    >
+                      {urgency === 'critical' && "🚨 "}
+                      {req.patientCondition || 'No additional details provided.'}
+                    </div>
+                  </div>
+
+                  {/* Right action buttons */}
+                  <div className="flex flex-row md:flex-col gap-2 md:justify-center w-full md:w-auto">
+                    <button
+                      onClick={() => handleAccept(req)}
+                      className="flex-1 md:flex-none bg-[#C91E1E] hover:bg-[#A01818] text-white px-5 py-2 rounded-md text-sm transition"
+                    >
+                      Accept
+                    </button>
+
+                    <button
+                      onClick={() => setHiddenIds((prev) => [...prev, req.id])}
+                      className="flex-1 md:flex-none border border-gray-300 hover:bg-gray-100 px-5 py-2 rounded-md text-sm transition"
+                    >
+                      Not now
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              {/* Right action buttons */}
-              <div className="flex flex-row md:flex-col gap-2 md:justify-center w-full md:w-auto">
-                <button
-                  onClick={() => setSelectedRequest(req)}
-                  className="flex-1 md:flex-none bg-[#C91E1E] hover:bg-[#A01818] text-white px-5 py-2 rounded-md text-sm transition"
-                >
-                  Accept
-                </button>
-
-                <button
-                  onClick={() => setHiddenIds((prev) => [...prev, req.id])}
-                  className="flex-1 md:flex-none border border-gray-300 hover:bg-gray-100 px-5 py-2 rounded-md text-sm transition"
-                >
-                  Not now
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Modal - rendered when a request is selected */}

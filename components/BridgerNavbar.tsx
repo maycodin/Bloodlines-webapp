@@ -1,16 +1,25 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Search, Bell, Menu, X, User, Home, Droplets, BarChart3, Settings } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Search, Bell, Menu, X, User, Home, Droplets, BarChart3, Settings, LogOut } from 'lucide-react';
 import Image from 'next/image';
+import { useAuth } from '@/app/contexts/AuthContext';
 
 interface BridgerNavbarProps {
   onPageChange?: (page: string) => void;
   activePage?: string;
+  onLogout?: () => void;
 }
 
-const BridgerNavbar: React.FC<BridgerNavbarProps> = ({ onPageChange, activePage = 'home' }) => {
+const BridgerNavbar: React.FC<BridgerNavbarProps> = ({ 
+  onPageChange, 
+  activePage = 'home',
+  onLogout 
+}) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const { user } = useAuth();
 
   const navItems = [
     { id: 'home', label: 'Home', icon: <Home className="w-4 h-4" /> },
@@ -19,11 +28,57 @@ const BridgerNavbar: React.FC<BridgerNavbarProps> = ({ onPageChange, activePage 
     { id: 'profile', label: 'Profile', icon: <Settings className="w-4 h-4" /> },
   ];
 
+  // Get user initials for avatar
+  const getUserInitials = () => {
+    if (!user?.fullName) return 'B';
+    const names = user.fullName.split(' ');
+    if (names.length === 1) return names[0].charAt(0).toUpperCase();
+    return (names[0].charAt(0) + names[names.length - 1].charAt(0)).toUpperCase();
+  };
+
+  // Get user display name
+  const getDisplayName = () => {
+    if (!user?.fullName) return 'Bridger';
+    return user.fullName;
+  };
+
+  // Get user role display
+  const getRoleDisplay = () => {
+    if (!user?.role) return 'Bridger';
+    const roleMap: Record<string, string> = {
+      donor: 'Donor',
+      bridger: 'Bridger',
+      'pulse-leader': 'Pulse Leader',
+      admin: 'Admin',
+    };
+    return roleMap[user.role.toLowerCase()] || 'Bridger';
+  };
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   const handleNavClick = (pageId: string) => {
     if (onPageChange) {
       onPageChange(pageId);
     }
     setIsMenuOpen(false);
+    setIsUserMenuOpen(false);
+  };
+
+  const handleLogout = () => {
+    setIsUserMenuOpen(false);
+    setIsMenuOpen(false);
+    if (onLogout) {
+      onLogout();
+    }
   };
 
   return (
@@ -70,15 +125,49 @@ const BridgerNavbar: React.FC<BridgerNavbarProps> = ({ onPageChange, activePage 
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
             </button>
 
-            {/* User Profile */}
-            <div className="flex items-center gap-3">
-              <div className="hidden sm:flex flex-col items-end">
-                <span className="text-sm font-semibold text-gray-900">Dr. Maria Mustafa</span>
-                <span className="text-xs text-gray-500">Admin</span>
-              </div>
-              <div className="w-9 h-9 bg-linear-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center border-2 border-white shadow">
-                <User className="w-5 h-5 text-red-600" />
-              </div>
+            {/* User Profile Dropdown */}
+            <div className="relative" ref={userMenuRef}>
+              <button
+                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                className="flex items-center gap-3 focus:outline-none"
+              >
+                <div className="hidden sm:flex flex-col items-end">
+                  <span className="text-sm font-semibold text-gray-900">{getDisplayName()}</span>
+                  <span className="text-xs text-gray-500">{getRoleDisplay()}</span>
+                </div>
+                <div className="w-9 h-9 bg-gradient-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center border-2 border-white shadow">
+                  <span className="text-sm font-semibold text-red-600">{getUserInitials()}</span>
+                </div>
+              </button>
+
+              {/* Dropdown Menu */}
+              {isUserMenuOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg py-2 z-50">
+                  <div className="px-4 py-3 border-b border-gray-100">
+                    <p className="text-sm font-semibold text-gray-900">{getDisplayName()}</p>
+                    <p className="text-xs text-gray-500">{user?.email || 'Bridger'}</p>
+                    <span className="inline-block mt-1.5 bg-[#C91E1E] text-white text-xs px-2.5 py-0.5 rounded-full">
+                      {getRoleDisplay()}
+                    </span>
+                  </div>
+                  <div className="pt-2">
+                    <button
+                      onClick={() => handleNavClick('profile')}
+                      className="flex items-center gap-3 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition"
+                    >
+                      <User className="w-4 h-4 text-gray-500" />
+                      Profile
+                    </button>
+                    <button
+                      onClick={handleLogout}
+                      className="flex items-center gap-3 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Sign Out
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Mobile Menu Button */}
@@ -122,6 +211,16 @@ const BridgerNavbar: React.FC<BridgerNavbarProps> = ({ onPageChange, activePage 
                 {item.label}
               </button>
             ))}
+            {/* Mobile Logout */}
+            <div className="border-t border-gray-200 pt-2 mt-2">
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm text-red-600 hover:bg-red-50 transition"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out
+              </button>
+            </div>
           </div>
         </div>
       )}

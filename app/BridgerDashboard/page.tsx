@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { 
   CheckCircle, Plus, Users, Calendar, HeartPulse, CircleArrowUp,
-  Droplets, History, AlertTriangle, Phone, MapPin, Clock, Trophy, Loader2 
+  Droplets, History, AlertTriangle, Phone, MapPin, Clock, Trophy, Loader2, LogOut
 } from "lucide-react";
 import BridgerNavbar from "@/components/BridgerNavbar";
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -28,14 +28,43 @@ interface DonorMatch {
   lastDonationDate?: string;
 }
 
+// Bridger Dashboard Data Type
+interface BridgerDashboardData {
+  activeRequests: number;
+  upcomingAppointments: number;
+  donorsNearby: number;
+  inventorySummary: any[];
+  donationActivity: {
+    totalUnitsFulfilled: number;
+    totalFulfilledRequests: number;
+  };
+  requestOverview: {
+    totalRequests: number;
+    fulfilledRequests: number;
+    overallFulfillmentRate: number;
+    byStatus: any[];
+  };
+  donorResponseMetrics: {
+    accepted: number;
+    rejected: number;
+    noResponse: number;
+  };
+  fulfillmentHistory: any[];
+  fulfillmentByBloodType: any[];
+  fulfillmentByPriority: any[];
+}
+
 const Dashboard = () => {
-  const { user: authUser, requestRoleUpgrade, refreshUser } = useAuth();
+  const { user: authUser, requestRoleUpgrade, refreshUser, logout } = useAuth();
   
   // State - renamed to avoid conflict with imported bloodRequests
   const [localBloodRequests, setLocalBloodRequests] = useState<BloodRequestType[]>([]);
   const [isThereActiveRequest, setIsThereActiveRequest] = useState(false);
   const [activePage, setActivePage] = useState<Page>("home");
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [dashboardData, setDashboardData] = useState<BridgerDashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   // Profile form state
   const [selectedRole, setSelectedRole] = useState('');
@@ -62,12 +91,6 @@ const Dashboard = () => {
   const [matches, setMatches] = useState<DonorMatch[]>([]);
   const [showMatches, setShowMatches] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
-  const [bridgerStats, setBridgerStats] = useState({
-    totalRequests: 0,
-    fulfillmentRate: 0,
-    avgResponseTime: '',
-    monthlyData: []
-  });
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [emergencyData, setEmergencyData] = useState({
     bloodType: '',
@@ -75,46 +98,61 @@ const Dashboard = () => {
     requestId: ''
   });
 
-  // Mock data
+  // Mock data for inventory (will be replaced with real data)
   const bloodInventory = [
     { type: 'O+', units: 45, status: 'good', color: '#1C7C3A' },
     { type: 'O-', units: 8, status: 'low', color: '#413D3D' },
     { type: 'AB+', units: 3, status: 'critical', color: '#C91E1E' },
   ];
 
-  const monthlyData = [
-    { month: 'Jan', value: 30 },
-    { month: 'Feb', value: 45 },
-    { month: 'Mar', value: 60 },
-    { month: 'Apr', value: 40 },
-    { month: 'May', value: 75 },
-    { month: 'Jun', value: 65 },
-    { month: 'Jul', value: 85 },
-    { month: 'Aug', value: 70 },
-    { month: 'Sep', value: 90 },
-    { month: 'Oct', value: 80 },
-    { month: 'Nov', value: 95 },
-    { month: 'Dec', value: 100 },
-  ];
-
-  // Fetch profile and stats on mount
+  // Fetch dashboard data
   useEffect(() => {
     const fetchBridgerData = async () => {
+      setLoading(true);
+      setError(null);
+      
       try {
+        // Fetch user profile
         const profileData = await donor.getProfile().catch(() => null);
         if (profileData) setProfile(profileData);
         
+        // Fetch bridger dashboard data
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const response = await fetch('https://bloodlines-core.onrender.com/bridger/dashboard', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch dashboard data');
+        }
+        
+        const data = await response.json();
+        setDashboardData(data);
+        
+        // Fetch bridger analytics if profile ID exists
         if (profileData?.id) {
           const statsData = await analytics.getBridgerAnalytics(profileData.id);
-          setBridgerStats(statsData);
+          // Merge with dashboard data
         }
-      } catch (error) {
-        console.error("Failed to fetch bridger data:", error);
+        
+      } catch (err: any) {
+        console.error("Failed to fetch bridger data:", err);
+        setError(err.message || "Failed to load dashboard data");
+      } finally {
+        setLoading(false);
       }
     };
     
     fetchBridgerData();
   }, []);
+
+  // Handle logout
+  const handleLogout = async () => {
+    await logout();
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -151,7 +189,6 @@ const Dashboard = () => {
     setIsThereActiveRequest(true);
   };
 
-  
   const handlePageChange = (page: string) => {
     setActivePage(page as Page);
   };
@@ -267,7 +304,6 @@ const Dashboard = () => {
   // Role Change Handler
   const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedRole(e.target.value);
-    // Reset conditional fields
     setCommunityName('');
     setFacilityName('');
     setFacilityAddress('');
@@ -287,7 +323,6 @@ const Dashboard = () => {
       return;
     }
     
-    // Validate role-specific fields
     if (selectedRole === 'pulse-leader' && !communityName) {
       alert('Please enter your community name');
       return;
@@ -302,7 +337,6 @@ const Dashboard = () => {
     setUpgradeMessage(null);
     
     try {
-      // Prepare details based on selected role
       const details: any = { reason };
       
       if (selectedRole === 'pulse-leader') {
@@ -319,14 +353,12 @@ const Dashboard = () => {
         text: `Your request to become a ${selectedRole === 'pulse-leader' ? 'Pulse Leader' : selectedRole === 'bridger' ? 'Bridger' : 'Admin'} has been submitted successfully! You will be notified once reviewed.` 
       });
       
-      // Reset form after successful submission
       setSelectedRole('');
       setCommunityName('');
       setFacilityName('');
       setFacilityAddress('');
       setReason('');
       
-      // Clear success message after 5 seconds
       setTimeout(() => setUpgradeMessage(null), 5000);
       
     } catch (error: any) {
@@ -341,6 +373,32 @@ const Dashboard = () => {
   };
 
   const renderPageContent = () => {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 text-red-600 animate-spin mx-auto mb-4" />
+            <p className="text-gray-600">Loading dashboard...</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (error) {
+      return (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+          <h3 className="text-lg font-semibold text-red-800 mb-2">Unable to Load Dashboard</h3>
+          <p className="text-red-600 mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+
     switch (activePage) {
       case 'home':
         return (
@@ -362,8 +420,8 @@ const Dashboard = () => {
                 <div className="bg-white rounded-lg w-80 p-6 shadow-md border border-[#D8D6D6]">
                   <div className="flex justify-between">
                     <div>
-                      <p className="text-black text-sm font-medium">Total Requests</p>
-                      <p className="text-2xl font-normal text-black mt-2">{bridgerStats.totalRequests || 25}</p>
+                      <p className="text-black text-sm font-medium">Active Requests</p>
+                      <p className="text-2xl font-normal text-black mt-2">{dashboardData?.activeRequests || 0}</p>
                     </div>
                     <div className="relative">
                       <select className="appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-medium py-2 pl-4 pr-10 rounded-lg cursor-pointer">
@@ -377,8 +435,8 @@ const Dashboard = () => {
                 <div className="bg-white rounded-lg w-80 p-6 shadow-md border border-[#D8D6D6]">
                   <div className="flex justify-between">
                     <div>
-                      <p className="text-black text-sm font-medium">Avg Response Time</p>
-                      <p className="text-2xl font-normal text-black mt-2">{bridgerStats.avgResponseTime || '5m 10s'}</p>
+                      <p className="text-black text-sm font-medium">Donors Nearby</p>
+                      <p className="text-2xl font-normal text-black mt-2">{dashboardData?.donorsNearby || 0}</p>
                     </div>
                     <div className="relative">
                       <select className="appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-medium py-2 pl-4 pr-10 rounded-lg cursor-pointer">
@@ -393,7 +451,7 @@ const Dashboard = () => {
                 
                 <div className="bg-white rounded-lg p-5 shadow-md border border-[#D8D6D6] w-96">
                   <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-xl font-bold text-gray-800">Activity</h2>
+                    <h2 className="text-xl font-bold text-gray-800">Fulfillment Rate</h2>
                     <select className="appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-medium py-2 pl-4 pr-10 rounded-lg cursor-pointer">
                       <option>Month</option>
                     </select>
@@ -403,9 +461,22 @@ const Dashboard = () => {
                       <span>100</span><span>50</span><span>0</span>
                     </div>
                     <div className="ml-10 h-full flex items-end justify-between">
-                      {monthlyData.map((item, index) => (
+                      {[
+                        { month: 'Jan', value: dashboardData?.requestOverview?.overallFulfillmentRate || 0 },
+                        { month: 'Feb', value: 0 },
+                        { month: 'Mar', value: 0 },
+                        { month: 'Apr', value: 0 },
+                        { month: 'May', value: 0 },
+                        { month: 'Jun', value: 0 },
+                        { month: 'Jul', value: 0 },
+                        { month: 'Aug', value: 0 },
+                        { month: 'Sep', value: 0 },
+                        { month: 'Oct', value: 0 },
+                        { month: 'Nov', value: 0 },
+                        { month: 'Dec', value: 0 },
+                      ].map((item, index) => (
                         <div key={index} className="flex flex-col items-center">
-                          <div className="w-2 bg-[#1C7C3A] rounded-lg" style={{ height: `${item.value * 0.6}px` }} />
+                          <div className="w-2 bg-[#1C7C3A] rounded-lg" style={{ height: `${Math.min(item.value * 0.6, 100)}px` }} />
                           <span className="text-xs text-gray-600 mt-2">{item.month}</span>
                         </div>
                       ))}
@@ -647,7 +718,6 @@ const Dashboard = () => {
                 </div>
               </div>
 
-              {/* Success/Error Message */}
               {upgradeMessage && (
                 <div className={`mb-4 p-3 rounded-lg ${
                   upgradeMessage.type === 'success' 
@@ -659,7 +729,6 @@ const Dashboard = () => {
               )}
 
               <form onSubmit={handleRoleUpgrade} className="space-y-5">
-                {/* Requested Role */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Requested Role <span className="text-red-500">*</span>
@@ -683,7 +752,6 @@ const Dashboard = () => {
                   </p>
                 </div>
 
-                {/* Conditional Fields for Pulse Leader */}
                 {selectedRole === 'pulse-leader' && (
                   <div className="animate-in fade-in duration-200">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -702,7 +770,6 @@ const Dashboard = () => {
                   </div>
                 )}
 
-                {/* Conditional Fields for Bridger */}
                 {selectedRole === 'bridger' && (
                   <div className="space-y-4 animate-in fade-in duration-200">
                     <div>
@@ -736,7 +803,6 @@ const Dashboard = () => {
                   </div>
                 )}
 
-                {/* Reason for Request */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Reason for Request <span className="text-red-500">*</span>
@@ -752,7 +818,6 @@ const Dashboard = () => {
                   />
                 </div>
 
-                {/* Info Message */}
                 <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-lg">
                   <span className="text-blue-500 text-lg">🔑</span>
                   <div className="flex-1">
@@ -763,7 +828,6 @@ const Dashboard = () => {
                   </div>
                 </div>
 
-                {/* Submit Button */}
                 <div className="flex justify-end">
                   <button 
                     type="submit"
@@ -792,7 +856,11 @@ const Dashboard = () => {
 
   return (
     <>
-      <BridgerNavbar onPageChange={handlePageChange} activePage={activePage} />
+      <BridgerNavbar 
+        onPageChange={handlePageChange} 
+        activePage={activePage}
+        onLogout={handleLogout}
+      />
       <div className='m-8'>{renderPageContent()}</div>
       <SuccessModal isOpen={showSuccessModal} onClose={handleCloseModal} onGoHome={handleGoHome} />
     </>

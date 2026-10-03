@@ -123,14 +123,23 @@ export interface UserProfile {
 export interface BloodRequest {
   id: string;
   bloodType: string;
+  priorityLevel: 'CRITICAL' | 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
   unitsNeeded: number;
-  urgency: 'critical' | 'high' | 'medium' | 'low';
-  status: 'pending' | 'accepted' | 'fulfilled' | 'cancelled';
-  hospitalId: string;
-  hospitalName: string;
+  contactPhone: string;
+  facilityName: string;
+  facilityAddress: string;
+  facilityLocation: {
+    type: 'Point';
+    coordinates: [number, number];
+  };
+  additionalNotes?: string;
   patientCondition: string;
   requiredByDate: string;
+  status: 'PENDING' | 'ACCEPTED' | 'FULFILLED' | 'CANCELLED';
+  hospitalId: string;
+  hospitalName?: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface PaginatedResponse<T> {
@@ -204,46 +213,39 @@ export const auth = {
   },
   
   login: async (email: string, password: string, remember: boolean = false): Promise<ApiResponse> => {
-    try {
-      const url = `${API_URL}/auth/login`;
-      console.log('🔐 Login to:', url);
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
-      
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.message || 'Login failed');
-      }
-      
-      // Store tokens
-      if (result.access_token || result.token) {
-        const token = result.access_token || result.token;
-        setAuthToken(token, remember);
-      }
-      
-      if (result.refreshToken) {
-        if (remember) {
-          localStorage.setItem('refreshToken', result.refreshToken);
-        } else {
-          sessionStorage.setItem('refreshToken', result.refreshToken);
-        }
-      }
-      
-      return { success: true, data: result, message: 'Login successful!' };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Something went wrong' 
-      };
+  try {
+    const url = `${API_URL}/auth/login`;
+    console.log('🔐 Login to:', url);
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+    });
+    
+    const result = await response.json();
+    console.log('🔑 Login response:', result);
+    console.log('🔑 Response status:', response.status);
+    
+    if (!response.ok) {
+      throw new Error(result.message || 'Login failed');
     }
-  },
+    
+    // ✅ Return the response data directly
+    return { 
+      success: true, 
+      data: result, 
+      message: 'Login successful!' 
+    };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Something went wrong' 
+    };
+  }
+},
   
   refreshToken: async (): Promise<{ access_token: string } | null> => {
     try {
@@ -385,6 +387,10 @@ export const donor = {
     return authFetch('/donor/dashboard/summary');
   },
   
+  getDashboard: async (): Promise<any> => {
+    return authFetch('/donor/dashboard');
+  },
+
   getProfile: async (): Promise<UserProfile> => {
     return authFetch('/donor/profile');
   },
@@ -426,14 +432,17 @@ export const donor = {
 
 // ============ User Module ============
 export const users = {
+  // GET /users/me - Get current user's profile (works for all roles)
   getMyProfile: async (): Promise<UserProfile> => {
     return authFetch('/users/me');
   },
   
+  // GET /users/{id} - Get another user's profile by ID
   getUserById: async (userId: string): Promise<UserProfile> => {
     return authFetch(`/users/${userId}`);
   },
   
+  // POST /users/profile - Update current user's profile
   updateMyProfile: async (profileData: Partial<UserProfile>): Promise<UserProfile> => {
     return authFetch('/users/profile', {
       method: 'POST',
@@ -442,29 +451,166 @@ export const users = {
   },
 };
 
+export const bridger = {
+  getDashboard: async (): Promise<any> => {
+    return authFetch('/bridger/dashboard');
+  },
+};
+
+export const pulseLeader = {
+  getDashboard: async (): Promise<any> => {
+    return authFetch('/pulse-leader/dashboard');
+  },
+};
+
+export const admin = {
+  getDashboard: async (): Promise<any> => {
+    return authFetch('/admin/dashboard');
+  },
+};
+
 // ============ Blood Requests Module ============
 export const bloodRequests = {
+  // POST /blood-requests - Create a new blood request
   create: async (data: {
     bloodType: string;
+    priorityLevel: 'CRITICAL' | 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
     unitsNeeded: number;
-    urgency: string;
-    hospitalId: string;
+    contactPhone: string;
+    facilityName: string;
+    facilityAddress: string;
+    facilityLocation: {
+      type: 'Point';
+      coordinates: [number, number]; // [longitude, latitude]
+    };
+    additionalNotes?: string;
     patientCondition: string;
     requiredByDate: string;
-    additionalNotes?: string;
   }): Promise<BloodRequest> => {
     return authFetch('/blood-requests', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
-  
+
+  // GET /blood-requests/active - Get all active blood requests
+  getActiveRequests: async (params?: {
+    page?: number;
+    limit?: number;
+  }): Promise<PaginatedResponse<BloodRequest>> => {
+    const query = params ? `?${new URLSearchParams(params as any).toString()}` : '';
+    return authFetch(`/blood-requests/active${query}`);
+  },
+
+  // GET /blood-requests/all - Get all blood requests (with filters)
+  getAllRequests: async (params?: {
+    page?: number;
+    limit?: number;
+    bloodType?: string;
+    urgency?: string;
+    status?: string;
+  }): Promise<PaginatedResponse<BloodRequest>> => {
+    const query = params ? `?${new URLSearchParams(params as any).toString()}` : '';
+    return authFetch(`/blood-requests/all${query}`);
+  },
+
+  // GET /blood-requests/my - Get bridger's own requests
+  getMyRequests: async (params?: {
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<PaginatedResponse<BloodRequest>> => {
+    const query = params ? `?${new URLSearchParams(params as any).toString()}` : '';
+    return authFetch(`/blood-requests/my${query}`);
+  },
+
+  // GET /blood-requests/donor - Get requests for donor (matched by blood type and location)
+  getDonorRequests: async (params?: {
+    page?: number;
+    limit?: number;
+    lat?: number;
+    lng?: number;
+    radius?: number;
+  }): Promise<PaginatedResponse<BloodRequest>> => {
+    const query = params ? `?${new URLSearchParams(params as any).toString()}` : '';
+    return authFetch(`/blood-requests/donor${query}`);
+  },
+
+  // GET /blood-requests/{requestId} - Get single request by ID
+  getRequestById: async (id: string): Promise<BloodRequest> => {
+    return authFetch(`/blood-requests/${id}`);
+  },
+
+  // POST /blood-requests/{requestId}/accept - Accept a request (donor)
+  accept: async (id: string): Promise<{ success: boolean; message: string }> => {
+    return authFetch(`/blood-requests/${id}/accept`, {
+      method: 'POST',
+    });
+  },
+
+  // POST /blood-requests/{requestId}/confirm - Confirm fulfillment (bridger)
+  confirm: async (id: string): Promise<{ success: boolean; message: string }> => {
+    return authFetch(`/blood-requests/${id}/confirm`, {
+      method: 'POST',
+    });
+  },
+
+  // POST /blood-requests/{requestId}/arrival-alert - Notify donor arrival
+  arrivalAlert: async (id: string): Promise<{ success: boolean; message: string }> => {
+    return authFetch(`/blood-requests/${id}/arrival-alert`, {
+      method: 'POST',
+    });
+  },
+
+  // POST /blood-requests/{requestId}/escalate - Escalate a critical request (pulse leader)
+  escalate: async (id: string, data?: {
+    reason?: string;
+    widerRadius?: number;
+  }): Promise<{ success: boolean; message: string }> => {
+    return authFetch(`/blood-requests/${id}/escalate`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  },
+
+  // POST /blood-requests/{requestId}/update - Update an existing request (bridger)
+  update: async (id: string, data: {
+    priorityLevel?: 'CRITICAL' | 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
+    unitsNeeded?: number;
+    contactPhone?: string;
+    additionalNotes?: string;
+    status?: 'PENDING' | 'ACCEPTED' | 'FULFILLED' | 'CANCELLED';
+    facilityName?: string;
+    facilityAddress?: string;
+    facilityLocation?: {
+      type: 'Point';
+      coordinates: [number, number];
+    };
+  }): Promise<BloodRequest> => {
+    return authFetch(`/blood-requests/${id}/update`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // POST /blood-requests/{requestId}/cancel - Cancel a request (bridger)
+  cancel: async (id: string, data?: {
+    reason?: string;
+  }): Promise<{ success: boolean; message: string }> => {
+    return authFetch(`/blood-requests/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  },
+
+  // GET /blood-requests/{id}/match - Get compatible donors (for bridger)
   getMatches: async (requestId: string): Promise<{
     donors: Array<{ id: string; fullName: string; bloodType: string; distance: number; phoneNumber?: string; email?: string; lastDonationDate?: string }>;
   }> => {
     return authFetch(`/blood-requests/${requestId}/match`);
   },
-  
+
+  // POST /blood-requests/emergency - Emergency broadcast (bridger/pulse leader)
   emergencyBroadcast: async (data: {
     requestId: string;
     bloodType: string;
@@ -475,70 +621,45 @@ export const bloodRequests = {
       body: JSON.stringify(data),
     });
   },
-  
-  getMyRequests: async (params?: { status?: string; page?: number; limit?: number }): Promise<PaginatedResponse<BloodRequest>> => {
-    const query = params ? `?${new URLSearchParams(params as any).toString()}` : '';
-    return authFetch(`/blood-requests/my${query}`);
-  },
-  
-  getActiveRequests: async (): Promise<BloodRequest[]> => {
-    const response = await authFetch('/blood-requests/active');
-    return response.data || response;
-  },
-  
-  getRequestById: async (id: string): Promise<BloodRequest> => {
-    return authFetch(`/blood-requests/${id}`);
-  },
-  
-  update: async (id: string, data: Partial<BloodRequest>): Promise<BloodRequest> => {
-    return authFetch(`/blood-requests/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  },
-  
-  accept: async (id: string): Promise<{ success: boolean; message: string }> => {
-    return authFetch(`/blood-requests/${id}/accept`, {
-      method: 'POST',
-    });
-  },
-  
-  confirm: async (id: string): Promise<{ success: boolean; message: string }> => {
-    return authFetch(`/blood-requests/${id}/confirm`, {
-      method: 'POST',
-    });
-  },
 };
 
 // ============ Pulse Leader Module ============
-export const pulseLeader = {
-  getMetrics: async (): Promise<{
-    totalDonations: number;
-    activeRequests: number;
-    fulfillmentRate: number;
-    regionalBreakdown: any[];
-  }> => {
-    return authFetch('/pulse-leader/metrics');
-  },
+// export const pulseLeader = {
+//   getMetrics: async (): Promise<{
+//     totalDonations: number;
+//     activeRequests: number;
+//     fulfillmentRate: number;
+//     regionalBreakdown: any[];
+//   }> => {
+//     return authFetch('/pulse-leader/metrics');
+//   },
   
-  getCampaigns: async (): Promise<PaginatedResponse<any>> => {
-    return authFetch('/pulse-leader/campaigns');
-  },
+//   getCampaigns: async (): Promise<PaginatedResponse<any>> => {
+//     return authFetch('/pulse-leader/campaigns');
+//   },
   
-  createCampaign: async (data: {
-    name: string;
-    goal: number;
-    targetRegions: string[];
-    bloodTypeFocus?: string;
-    startDate: string;
-    endDate: string;
-  }): Promise<any> => {
-    return authFetch('/pulse-leader/campaigns', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-};
+//   createCampaign: async (data: {
+//     name: string;
+//     goal: number;
+//     targetRegions: string[];
+//     bloodTypeFocus?: string;
+//     startDate: string;
+//     endDate: string;
+//   }): Promise<any> => {
+//     return authFetch('/pulse-leader/campaigns', {
+//       method: 'POST',
+//       body: JSON.stringify(data),
+//     });
+//   },
+
+//   getUpgradeHistory: async (params?: {
+//     page?: number;
+//     limit?: number;
+//   }): Promise<PaginatedResponse<any>> => {
+//     const query = params ? `?${new URLSearchParams(params as any).toString()}` : '';
+//     return authFetch(`/role-upgrades/my-history${query}`);
+//   },
+// };
 
 // ============ Analytics Module ============
 export const analytics = {

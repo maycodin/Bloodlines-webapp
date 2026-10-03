@@ -13,14 +13,14 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/app/contexts/AuthContext";
 
 interface DonorNavbarProps {
   onPageChange?: (page: string) => void;
   activePage?: string;
 }
 
-// Mock user data
-
+// Mock user data (will be replaced with real user from AuthContext)
 const USER = {
   name: "Abdul Matthew",
   email: "Abdul.Matthew@gmail.com",
@@ -36,6 +36,15 @@ const DonorNavbar: React.FC<DonorNavbarProps> = ({
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const { logout, user } = useAuth();
+
+  // Use real user data if available, fallback to mock
+  const displayUser = user ? {
+    name: user.fullName || USER.name,
+    email: user.email || USER.email,
+    role: user.role || USER.role,
+    initials: user.fullName ? user.fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase() : USER.initials,
+  } : USER;
 
   const navItems = [
     { id: "home", label: "Home", icon: <Home className="w-4 h-4" /> },
@@ -66,8 +75,11 @@ const DonorNavbar: React.FC<DonorNavbarProps> = ({
     setIsUserMenuOpen(false);
   };
 
-  const handleSignOut = () => {
-    router.push("/");
+  const handleSignOut = async () => {
+    setIsUserMenuOpen(false);
+    setIsMenuOpen(false);
+    await logout();
+    // The logout function in AuthContext already handles redirect
   };
 
   return (
@@ -126,14 +138,14 @@ const DonorNavbar: React.FC<DonorNavbarProps> = ({
                 {/* Name + role — desktop only */}
                 <div className="hidden sm:flex flex-col items-end">
                   <span className="text-sm font-semibold text-gray-900">
-                    {USER.name}
+                    {displayUser.name}
                   </span>
-                  <span className="text-xs text-gray-500">{USER.role}</span>
+                  <span className="text-xs text-gray-500">{displayUser.role}</span>
                 </div>
 
                 {/* Avatar circle */}
                 <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-semibold shadow">
-                  {USER.initials}
+                  {displayUser.initials}
                 </div>
               </button>
 
@@ -143,11 +155,11 @@ const DonorNavbar: React.FC<DonorNavbarProps> = ({
                   {/* User info */}
                   <div className="px-4 pb-3 border-b border-gray-100">
                     <p className="text-sm font-semibold text-gray-900">
-                      {USER.name}
+                      {displayUser.name}
                     </p>
-                    <p className="text-xs text-gray-500 mt-0.5">{USER.email}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{displayUser.email}</p>
                     <span className="inline-block mt-2 bg-green-600 text-white text-xs px-2.5 py-0.5 rounded-full">
-                      {USER.role}
+                      {displayUser.role}
                     </span>
                   </div>
 
@@ -221,11 +233,11 @@ const DonorNavbar: React.FC<DonorNavbarProps> = ({
             <div className="border-t border-gray-100 pt-3 mt-2 space-y-1">
               <div className="px-4 py-2">
                 <p className="text-sm font-semibold text-gray-900">
-                  {USER.name}
+                  {displayUser.name}
                 </p>
-                <p className="text-xs text-gray-500">{USER.email}</p>
+                <p className="text-xs text-gray-500">{displayUser.email}</p>
                 <span className="inline-block mt-1.5 bg-green-600 text-white text-xs px-2.5 py-0.5 rounded-full">
-                  {USER.role}
+                  {displayUser.role}
                 </span>
               </div>
 

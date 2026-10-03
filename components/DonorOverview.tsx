@@ -28,10 +28,12 @@ interface DonorOverviewProps {
   livesSaved?: number;
   badgesEarned?: number;
   bloodType?: string;
-  availability?: Availability;
+  availability?: "Available" | "Busy";
   nextEligibility?: string;
   achievements?: Achievement[];
   donorName?: string;
+  emergenciesHandled?: number;
+  newDonorsRecruited?: number;
 }
 
 /* Each blood donation can help up to 3 people. Multiply total donations accordingly. */
@@ -164,7 +166,7 @@ const DonorOverview: React.FC<DonorOverviewProps> = ({
         </div>
 
         <div className="flex flex-col items-center text-center mb-4">
-          <Image
+          {/* <Image
             src={`/badges/level-${level}.png`}
             alt={`Level ${level} badge`}
             width={96}
@@ -174,7 +176,7 @@ const DonorOverview: React.FC<DonorOverviewProps> = ({
               // Fallback to default badge if level-specific badge doesn't exist
               (e.target as HTMLImageElement).src = "/Impact Badge.png";
             }}
-          />
+          /> */}
           <p className="text-sm text-gray-500 mt-2">
             Way to go {donorName}! 🎉
           </p>

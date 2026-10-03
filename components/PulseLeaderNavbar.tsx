@@ -2,16 +2,22 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, Bell, Menu, X, User, Home, BarChart3, Compass } from 'lucide-react';
+import { Search, Bell, Menu, X, User, Home, BarChart3, LogOut, Droplets } from 'lucide-react';
 import Image from 'next/image';
 
 interface PulseLeaderNavbarProps {
   onPageChange?: (page: string) => void;
   activePage?: string;
+  onLogout?: () => void;
 }
 
-const PulseLeaderNavbar: React.FC<PulseLeaderNavbarProps> = ({ onPageChange, activePage = 'home' }) => {
+const PulseLeaderNavbar: React.FC<PulseLeaderNavbarProps> = ({ 
+  onPageChange, 
+  activePage = 'home',
+  onLogout 
+}) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   const navItems = [
     { id: 'home', label: 'Home', icon: <Home className="w-4 h-4" /> },
@@ -25,15 +31,24 @@ const PulseLeaderNavbar: React.FC<PulseLeaderNavbarProps> = ({ onPageChange, act
       onPageChange(pageId);
     }
     setIsMenuOpen(false);
+    setIsUserMenuOpen(false);
+  };
+
+  const handleLogout = () => {
+    setIsUserMenuOpen(false);
+    setIsMenuOpen(false);
+    if (onLogout) {
+      onLogout();
+    }
   };
 
   return (
     <nav className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo and Brand */}
-          <div className="flex items-center">
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleNavClick('home')}>
+          {/* Logo */}
+          <div className="flex items-center" onClick={() => handleNavClick('home')}>
+            <div className="flex items-center gap-2 cursor-pointer">
               <Image
                 src="/Logo.png"
                 alt="Logo Image"
@@ -65,21 +80,44 @@ const PulseLeaderNavbar: React.FC<PulseLeaderNavbarProps> = ({ onPageChange, act
 
           {/* User Section */}
           <div className="flex items-center gap-4">
-            {/* Notifications */}
             <button className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg">
               <Bell className="w-5 h-5" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
             </button>
 
-            {/* User Profile */}
-            <div className="flex items-center gap-3">
-              <div className="hidden sm:flex flex-col items-end">
-                <span className="text-sm font-semibold text-gray-900">Dr. Maria Mustafa</span>
-                <span className="text-xs text-gray-500">Pulse Leader</span>
-              </div>
-              <div className="w-9 h-9 bg-gradient-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center border-2 border-white shadow">
-                <User className="w-5 h-5 text-red-600" />
-              </div>
+            {/* User Profile Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                className="flex items-center gap-3 focus:outline-none"
+              >
+                <div className="hidden sm:flex flex-col items-end">
+                  <span className="text-sm font-semibold text-gray-900">Pulse Leader</span>
+                </div>
+                <div className="w-9 h-9 bg-gradient-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center border-2 border-white shadow">
+                  <User className="w-5 h-5 text-red-600" />
+                </div>
+              </button>
+
+              {/* Dropdown Menu */}
+              {isUserMenuOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50">
+                  <button
+                    onClick={() => handleNavClick('profile')}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition"
+                  >
+                    <User className="w-4 h-4" />
+                    Profile
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sign Out
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Mobile Menu Button */}
@@ -89,18 +127,6 @@ const PulseLeaderNavbar: React.FC<PulseLeaderNavbarProps> = ({ onPageChange, act
             >
               {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
-          </div>
-        </div>
-
-        {/* Mobile Search Bar */}
-        <div className="sm:hidden pb-3">
-          <div className="flex items-center bg-gray-100 rounded-lg px-3 py-2">
-            <Search className="w-4 h-4 text-gray-500" />
-            <input
-              type="text"
-              placeholder="Search requests, donors..."
-              className="bg-transparent border-none focus:outline-none ml-2 text-sm flex-1"
-            />
           </div>
         </div>
       </div>
@@ -123,6 +149,15 @@ const PulseLeaderNavbar: React.FC<PulseLeaderNavbarProps> = ({ onPageChange, act
                 {item.label}
               </button>
             ))}
+            <div className="border-t border-gray-200 pt-2 mt-2">
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm text-red-600 hover:bg-red-50 transition"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -47,31 +47,47 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const router = useRouter();
   const pathname = usePathname();
 
-  const refreshUser = async () => {
-    try {
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      console.log('🔄 Refreshing user... Token:', token ? 'Present' : 'Missing');
-      
-      if (!token) {
-        setUser(null);
-        return;
-      }
-      
-      const { donor } = await import('@/lib/api');
-      const profile = await donor.getProfile();
-      setUser(profile);
-      console.log('✅ User refreshed:', profile);
-    } catch (error) {
-      console.error('❌ Failed to refresh user:', error);
-      const result = await auth.refreshToken();
-      if (!result) {
-        localStorage.removeItem('token');
-        sessionStorage.removeItem('token');
-        setUser(null);
-      }
-    }
-  };
+  // contexts/AuthContext.tsx - Update refreshUser
 
+const refreshUser = async () => {
+  try {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    console.log('🔄 Refreshing user... Token:', token ? 'Present' : 'Missing');
+    
+    if (!token) {
+      setUser(null);
+      return;
+    }
+    
+    // ✅ Use the generic user endpoint
+    const { users } = await import('@/lib/api');
+    const profile = await users.getMyProfile();
+    if (profile && profile.role) {
+  profile.role = normalizeRole(profile.role) as any;
+}
+setUser(profile);
+
+    console.log('✅ User refreshed:', profile);
+  } catch (error) {
+    console.error('❌ Failed to refresh user:', error);
+    const result = await auth.refreshToken();
+    if (!result) {
+      localStorage.removeItem('token');
+      sessionStorage.removeItem('token');
+      setUser(null);
+    }
+  }
+};
+
+const normalizeRole = (role: string): 'donor' | 'bridger' | 'pulse-leader' | 'admin' => {
+  if (!role) return 'donor';
+  const normalized = role.toLowerCase().replace(/_/g, '-');
+  // Ensure the normalized role is one of the allowed values
+  if (normalized === 'donor' || normalized === 'bridger' || normalized === 'pulse-leader' || normalized === 'admin') {
+    return normalized;
+  }
+  return 'donor'; // Default to donor if unknown
+};
   // Initialize auth on mount
   useEffect(() => {
     const initAuth = async () => {
@@ -139,51 +155,72 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [user, isLoading, pathname, router]);
 
   // Login function - Updated with proper waiting
-  const login = async (email: string, password: string, remember = false) => {
-    try {
-      console.log('🔐 Attempting login...');
-      const result = await auth.login(email, password);
-      
-      if (!result.success || !result.data) {
-        throw new Error(result.error || 'Login failed');
-      }
-      
-      // Store token first
-      const token = result.data.access_token || result.data.token;
-      if (token) {
-        if (remember) {
-          localStorage.setItem('token', token);
-          console.log('💾 Token stored in localStorage');
-        } else {
-          sessionStorage.setItem('token', token);
-          console.log('💾 Token stored in sessionStorage');
-        }
-      }
-      
-      // Wait a moment for storage to be available
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Now refresh user data - this will set the user state
-      console.log('🔄 Fetching user profile...');
-      await refreshUser();
-      
-      // Wait a moment for state to update
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      // Get the user role from the stored data
-      const userRole = result.data.user?.role || 'donor';
-      const redirectPath = roleRoutes[userRole as keyof typeof roleRoutes] || '/DonorDashboard';
-      
-      console.log(`✅ Login successful, redirecting to: ${redirectPath} with role: ${userRole}`);
-      
-      // Use window.location for a hard redirect to ensure clean state
-      window.location.href = redirectPath;
-      
-    } catch (error) {
-      console.error('❌ Login error:', error);
-      throw error;
+  // contexts/AuthContext.tsx - Update the login function
+
+// contexts/AuthContext.tsx - Update the login function
+
+const login = async (email: string, password: string, remember = false) => {
+  try {
+    console.log('🔐 Attempting login...');
+    const result = await auth.login(email, password);
+    
+    if (!result.success || !result.data) {
+      throw new Error(result.error || 'Login failed');
     }
-  };
+    
+    // Store token first
+    const token = result.data.accessToken || result.data.token || result.data.access_token;
+    if (token) {
+      if (remember) {
+        localStorage.setItem('token', token);
+        console.log('💾 Token stored in localStorage');
+      } else {
+        sessionStorage.setItem('token', token);
+        console.log('💾 Token stored in sessionStorage');
+      }
+    }
+    
+    // Store refresh token if provided
+    if (result.data.refreshToken) {
+      if (remember) {
+        localStorage.setItem('refreshToken', result.data.refreshToken);
+      } else {
+        sessionStorage.setItem('refreshToken', result.data.refreshToken);
+      }
+    }
+    
+    // ✅ Set the user in state using the normalized role
+    const normalizedRole = normalizeRole(result.data.user?.role || 'donor');
+    setUser({
+      id: result.data.user.id,
+      fullName: result.data.user.fullName || '',
+      email: result.data.user.email,
+      phoneNumber: '',
+      gender: 'Male' as 'Male' | 'Female',
+      role: normalizedRole,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    
+    // ✅ Determine redirect path based on role
+    const redirectMap: Record<string, string> = {
+      donor: '/DonorDashboard',
+      bridger: '/BridgerDashboard',
+      'pulse-leader': '/PulseLeader',
+      admin: '/admin/dashboard',
+    };
+    
+    const redirectPath = redirectMap[normalizedRole] || '/DonorDashboard';
+    console.log(`🔄 Redirecting to: ${redirectPath} for role: ${normalizedRole}`);
+    
+    // ✅ Use window.location for a hard redirect to ensure clean state
+    window.location.href = redirectPath;
+    
+  } catch (error) {
+    console.error('❌ Login error:', error);
+    throw error;
+  }
+};
 
   // Logout function
   const logout = () => {
@@ -196,18 +233,63 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Role upgrade function
   const requestRoleUpgrade = async (role: string, details: any) => {
+  try {
+    // Get the token directly
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    
+    if (!token) {
+      throw new Error('No authentication token found. Please login again.');
+    }
+    
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/role-upgrades/request`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({ requestedRole: role, ...details }),
     });
     
-    if (!response.ok) throw new Error('Failed to submit role upgrade request');
+    // If unauthorized, try to refresh token
+    if (response.status === 401) {
+      console.log('🔄 Token expired during role upgrade, attempting refresh...');
+      const refreshed = await auth.refreshToken();
+      
+      if (refreshed) {
+        // Retry with new token
+        const newToken = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const retryResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/role-upgrades/request`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${newToken}`,
+          },
+          body: JSON.stringify({ requestedRole: role, ...details }),
+        });
+        
+        if (!retryResponse.ok) {
+          const error = await retryResponse.json();
+          throw new Error(error.message || 'Failed to submit role upgrade request');
+        }
+        
+        return retryResponse.json();
+      } else {
+        throw new Error('Session expired. Please login again.');
+      }
+    }
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to submit role upgrade request');
+    }
+    
     return response.json();
-  };
+    
+  } catch (error) {
+    console.error('❌ Role upgrade error:', error);
+    throw error;
+  }
+};
 
   // Context value
   const value = {
@@ -221,12 +303,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     requestRoleUpgrade,
   };
 
-  console.log('📊 AuthContext state:', { 
-    isLoading: value.isLoading, 
-    isAuthenticated: value.isAuthenticated, 
-    userRole: value.userRole,
-    hasUser: !!user 
-  });
+  // console.log('📊 AuthContext state:', { 
+  //   isLoading: value.isLoading, 
+  //   isAuthenticated: value.isAuthenticated, 
+  //   userRole: value.userRole,
+  //   hasUser: !!user 
+  // });
 
   return (
     <AuthContext.Provider value={value}>
