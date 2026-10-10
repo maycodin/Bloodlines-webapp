@@ -1,4 +1,3 @@
-// app/faq/page.tsx
 import React from 'react';
 import Image from 'next/image';
 import FAQAccordion from '@/components/FAQAccordion';

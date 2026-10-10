@@ -1,5 +1,15 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Setup
+
+1. Install dependencies: `npm install`
+2. Copy `.env.example` to `.env.local` (it sets `NEXT_PUBLIC_API_URL`, the backend address).
+3. Start the dev server: `npm run dev`
+
+API docs (Swagger): https://bloodlines-core.onrender.com/api
+
+To refresh `lib/api-types.ts` from the live API docs, run `npm run generate-api-types`.
+
 ## Getting Started
 
 First, run the development server:

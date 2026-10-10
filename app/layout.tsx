@@ -1,5 +1,4 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
 import { Manrope } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/app/contexts/AuthContext";
@@ -15,7 +14,12 @@ export const metadata: Metadata = {
   description: "Connect blood donors with recipients instantly. Post requests, find donors, and manage blood inventory.",
   keywords: "blood donation, blood bank, donor matching, emergency blood request",
   authors: [{ name: "BloodLines Team" }],
-  viewport: "width=device-width, initial-scale=1",
+};
+
+// Next.js expects viewport settings in their own export
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

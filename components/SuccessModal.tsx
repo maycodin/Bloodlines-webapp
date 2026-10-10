@@ -1,4 +1,3 @@
-// components/SuccessModal.tsx
 "use client"
 import React from 'react';
 import { CheckCircle, Home, Droplets } from 'lucide-react';

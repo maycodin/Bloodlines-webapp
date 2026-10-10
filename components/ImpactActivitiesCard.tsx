@@ -1,4 +1,3 @@
-// components/ImpactActivitiesCards.tsx
 import React from 'react';
 import Image from 'next/image';
 import { Droplets, Users, HeartPulse, Clock } from 'lucide-react';

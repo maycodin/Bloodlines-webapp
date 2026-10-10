@@ -1,244 +1,260 @@
-import { useState, useRef, useEffect } from "react";
-import {
-  ArrowUpCircle,
-  Users,
-  Heart,
-  Shield,
-  ChevronDown,
-  Info
-} from "lucide-react";
+// components/RoleUpgradeForm.tsx
+// The one shared "Upgrade Your Role" form, used on the Donor, Bridger and Pulse Leader profile pages.
+"use client";
 
-type RoleKey = "pulse_leader" | "bridger" | "admin";
+import { useState } from "react";
+import { CircleArrowUp, Loader2 } from "lucide-react";
+import { useAuth } from "@/app/contexts/AuthContext";
+import InlineMessage, { Message } from "@/components/InlineMessage";
 
-type Role = {
-  key: RoleKey;
-  label: string;
-  description: string;
-  icon: React.ReactNode;
+// Values are sent to the backend as-is (POST /role-upgrades/request).
+// The API docs say upgrades are for Bridger or Pulse Leader only.
+type RoleValue = "PULSE_LEADER" | "BRIDGER";
+
+const ROLE_LABELS: Record<RoleValue, string> = {
+  PULSE_LEADER: "Pulse Leader",
+  BRIDGER: "Bridger",
 };
 
-type RoleFields = {
-  communityName?: string;
-  facilityName?: string;
-  facilityAddress?: string;
+const ROLE_HINTS: Record<RoleValue, string> = {
+  PULSE_LEADER: "Lead and manage blood donation campaigns in your community",
+  BRIDGER: "Create and manage blood requests at your hospital",
 };
 
-const MIN_REASON_LENGTH = 100;
-
-const ROLES: Role[] = [
-  {
-    key: "pulse_leader",
-    label: "Pulse Leader",
-    description: "Community coordinator",
-    icon: <Users className="w-4 h-4 text-[#1B59F8]" />,
-  },
-  {
-    key: "bridger",
-    label: "Bridger (Hospital Staff)",
-    description: "Submit blood requests",
-    icon: <Heart className="w-4 h-4 text-gray-500" />,
-  },
-  {
-    key: "admin",
-    label: "Admin",
-    description: "System administrator",
-    icon: <Shield className="w-4 h-4 text-gray-500" />,
-  },
-];
-
-const ROLE_LABELS: Record<RoleKey, string> = {
-  pulse_leader: "Pulse Leader",
-  bridger: "Bridger",
-  admin: "Admin",
+// Matches the normalised role names used in AuthContext
+const CURRENT_ROLE_VALUE: Record<string, RoleValue> = {
+  bridger: "BRIDGER",
+  "pulse-leader": "PULSE_LEADER",
 };
 
 type RoleUpgradeFormProps = {
-  onSubmitSuccess: (roleLabel: string) => void;
+  // Called after a request is submitted successfully (e.g. to reload the history list)
+  onSubmitted?: () => void;
+  // Same moment, but also passes the readable role name
+  onSubmitSuccess?: (roleLabel: string) => void;
+  className?: string;
 };
 
-const RoleUpgradeForm = ({ onSubmitSuccess }: RoleUpgradeFormProps) => {
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<RoleKey | null>(null);
+const inputClass =
+  "w-full bg-gray-50 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent";
+
+const RoleUpgradeForm = ({
+  onSubmitted,
+  onSubmitSuccess,
+  className = "mt-6 bg-white rounded-lg border border-[#D8D6D6] p-6",
+}: RoleUpgradeFormProps) => {
+  const { requestRoleUpgrade, user } = useAuth();
+  // Don't offer the role the user already has
+  const currentRole = user?.role ? CURRENT_ROLE_VALUE[user.role] : undefined;
+
+  const [selectedRole, setSelectedRole] = useState<RoleValue | "">("");
+  const [communityName, setCommunityName] = useState("");
+  const [facilityName, setFacilityName] = useState("");
+  const [facilityAddress, setFacilityAddress] = useState("");
   const [reason, setReason] = useState("");
-  const [roleFields, setRoleFields] = useState<RoleFields>({});
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [message, setMessage] = useState<Message | null>(null);
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const handleRoleSelect = (key: RoleKey) => {
-    setSelectedRole(key);
-    setDropdownOpen(false);
-    setRoleFields({});
-  };
-
-  const handleSubmit = () => {
-    if (!selectedRole) return;
-    onSubmitSuccess(ROLE_LABELS[selectedRole]);
-    // Reset form
-    setSelectedRole(null);
+  const resetForm = () => {
+    setSelectedRole("");
+    setCommunityName("");
+    setFacilityName("");
+    setFacilityAddress("");
     setReason("");
-    setRoleFields({});
   };
 
-  const selectedRoleData = ROLES.find((r) => r.key === selectedRole);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!selectedRole) {
+      setMessage({ type: "error", text: "Please select a role to upgrade to" });
+      return;
+    }
+    if (!reason.trim()) {
+      setMessage({ type: "error", text: "Please provide a reason for the role upgrade request" });
+      return;
+    }
+    if (selectedRole === "PULSE_LEADER" && !communityName.trim()) {
+      setMessage({ type: "error", text: "Please enter your community name" });
+      return;
+    }
+    if (selectedRole === "BRIDGER" && (!facilityName.trim() || !facilityAddress.trim())) {
+      setMessage({ type: "error", text: "Please enter both facility name and address" });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setMessage(null);
+
+    try {
+      const details: Record<string, string> = { reason };
+      if (selectedRole === "PULSE_LEADER") {
+        // The backend has no community field yet, so it travels with the reason for the reviewer
+        details.reason = `${reason}\n\nCommunity: ${communityName}`;
+      } else if (selectedRole === "BRIDGER") {
+        details.facilityName = facilityName;
+        details.facilityAddress = facilityAddress;
+      }
+
+      await requestRoleUpgrade(selectedRole, details);
+
+      const roleLabel = ROLE_LABELS[selectedRole];
+      setMessage({
+        type: "success",
+        text: `Your request to become a ${roleLabel} has been submitted successfully! You will be notified once reviewed.`,
+      });
+      resetForm();
+      onSubmitted?.();
+      onSubmitSuccess?.(roleLabel);
+    } catch (error: any) {
+      console.error("Role upgrade error:", error);
+      setMessage({
+        type: "error",
+        text: error?.message || "Failed to submit role upgrade request. Please try again.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm border border-[#D8D6D6]">
-      <div className="flex items-center gap-2 mb-4">
-          <ArrowUpCircle className="w-5 h-5 text-[#1B59F8]" />
-       <p className="font-semibold text-gray-800">Upgrade Your Role</p>
+    <div className={className}>
+      <div className="flex items-start gap-3 mb-4">
+        <CircleArrowUp className="w-6 h-6 text-[#1B59F8] flex-shrink-0 mt-1" />
+        <div>
+          <h3 className="text-xl font-bold text-gray-900">Upgrade Your Role</h3>
+          <p className="text-sm text-gray-500 mt-1">
+            Apply to become a Pulse Leader or Bridger
+          </p>
+        </div>
       </div>
 
-      <p className="text-sm font-medium text-gray-800 mb-1">Request Role Upgrade</p>
-      <p className="text-sm text-gray-500 mb-5">
-        Apply to become a Pulse Leader, Bridger, or Admin
-      </p>
+      <InlineMessage message={message} onClose={() => setMessage(null)} />
 
-      <div className="mb-4" ref={dropdownRef}>
-        <label className="text-sm font-medium text-gray-800 block mb-1.5">
-          Requested Role<span className="text-[#C91E1E]">*</span>
-        </label>
-
-        <div className="relative">
-          <button
-            onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="w-full flex items-center justify-between border border-gray-200 bg-gray-50 rounded-md px-4 py-2.5 text-sm text-left"
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div>
+          <label htmlFor="requested-role" className="block text-sm font-medium text-gray-700 mb-1">
+            Requested Role <span className="text-red-500">*</span>
+          </label>
+          <select
+            id="requested-role"
+            value={selectedRole}
+            onChange={(e) => {
+              setSelectedRole(e.target.value as RoleValue | "");
+              setCommunityName("");
+              setFacilityName("");
+              setFacilityAddress("");
+            }}
+            className={inputClass}
+            required
+            disabled={isSubmitting}
           >
-            {selectedRoleData ? (
-              <span className="flex items-center gap-2">
-                {selectedRoleData.icon}
-                <span className="font-medium">{selectedRoleData.label}</span>
-                <span className="text-gray-500 text-xs">{selectedRoleData.description}</span>
-              </span>
-            ) : (
-              <span className="text-gray-400">Select role type</span>
-            )}
-            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
-          </button>
-
-          {dropdownOpen && (
-            <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-md shadow-md mt-1">
-              {ROLES.map((role) => (
-                <button
-                  key={role.key}
-                  onClick={() => handleRoleSelect(role.key)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-gray-50 transition ${
-                    selectedRole === role.key ? "bg-gray-50" : ""
-                  }`}
-                >
-                  {role.icon}
-                  <div>
-                    <p className="font-medium text-gray-800">{role.label}</p>
-                    <p className="text-xs text-gray-500">{role.description}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
+            <option value="" disabled>Select role type</option>
+            {currentRole !== "PULSE_LEADER" && <option value="PULSE_LEADER">Pulse Leader</option>}
+            {currentRole !== "BRIDGER" && <option value="BRIDGER">Bridger (Hospital Staff)</option>}
+          </select>
+          {selectedRole && (
+            <p className="text-xs text-gray-500 mt-1">{ROLE_HINTS[selectedRole]}</p>
           )}
         </div>
-      </div>
 
-      {/* Conditional fields per role */}
-
-      {selectedRole === "pulse_leader" && (
-        <div className="mb-4">
-          <label className="text-sm font-medium text-gray-800 block mb-1.5">
-            Community Name<span className="text-[#C91E1E]">*</span>
-          </label>
-          <input
-            type="text"
-            value={roleFields.communityName ?? ""}
-            onChange={(e) => setRoleFields((prev) => ({ ...prev, communityName: e.target.value }))}
-            placeholder="Enter your community's name"
-            className="w-full border border-gray-200 bg-gray-50 rounded-md px-4 py-2.5 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#1B59F8]"
-          />
-        </div>
-      )}
-
-      {selectedRole === "bridger" && (
-        <>
-          <div className="mb-4">
-            <label className="text-sm font-medium text-gray-800 block mb-1.5">
-              Facility Name<span className="text-[#C91E1E]">*</span>
+        {selectedRole === "PULSE_LEADER" && (
+          <div>
+            <label htmlFor="community-name" className="block text-sm font-medium text-gray-700 mb-1">
+              Community Name <span className="text-red-500">*</span>
             </label>
             <input
+              id="community-name"
               type="text"
-              value={roleFields.facilityName ?? ""}
-              onChange={(e) => setRoleFields((prev) => ({ ...prev, facilityName: e.target.value }))}
-              placeholder="Enter hospital/clinic name"
-              className="w-full border border-gray-200 bg-gray-50 rounded-md px-4 py-2.5 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#1B59F8]"
+              value={communityName}
+              onChange={(e) => setCommunityName(e.target.value)}
+              placeholder="e.g., Lagos Central Community"
+              className={inputClass}
+              required
+              disabled={isSubmitting}
             />
+            <p className="text-xs text-gray-500 mt-1">The community you will be leading</p>
           </div>
+        )}
 
-          <div className="mb-4">
-            <label className="text-sm font-medium text-gray-800 block mb-1.5">
-              Facility Address
-            </label>
-            <input
-              type="text"
-              value={roleFields.facilityAddress ?? ""}
-              onChange={(e) => setRoleFields((prev) => ({ ...prev, facilityAddress: e.target.value }))}
-              placeholder="Enter facility address"
-              className="w-full border border-gray-200 bg-gray-50 rounded-md px-4 py-2.5 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#1B59F8]"
-            />
+        {selectedRole === "BRIDGER" && (
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="facility-name" className="block text-sm font-medium text-gray-700 mb-1">
+                Facility Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="facility-name"
+                type="text"
+                value={facilityName}
+                onChange={(e) => setFacilityName(e.target.value)}
+                placeholder="e.g., Lagos University Teaching Hospital"
+                className={inputClass}
+                required
+                disabled={isSubmitting}
+              />
+            </div>
+            <div>
+              <label htmlFor="facility-address" className="block text-sm font-medium text-gray-700 mb-1">
+                Facility Address <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="facility-address"
+                type="text"
+                value={facilityAddress}
+                onChange={(e) => setFacilityAddress(e.target.value)}
+                placeholder="e.g., Idi-Araba, Lagos"
+                className={inputClass}
+                required
+                disabled={isSubmitting}
+              />
+            </div>
           </div>
-        </>
-      )}
+        )}
 
-      {selectedRole && (
-        <div className="mb-5">
-          <label className="text-sm font-medium text-gray-800 block mb-1.5">
-            Reason for Request<span className="text-[#C91E1E]">*</span>
+        <div>
+          <label htmlFor="upgrade-reason" className="block text-sm font-medium text-gray-700 mb-1">
+            Reason for Request <span className="text-red-500">*</span>
           </label>
           <textarea
+            id="upgrade-reason"
+            rows={4}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
+            className={`${inputClass} resize-none`}
             placeholder="Please explain why you want to upgrade to this role and how you plan to contribute..."
-            className={`w-full border bg-gray-50 rounded-md px-4 py-3 text-sm placeholder:text-gray-400 h-28 resize-none focus:outline-none focus:ring-1 transition ${
-              reason.length > 0 && reason.length < MIN_REASON_LENGTH
-                ? "border-red-300 focus:ring-red-300"
-                : "border-gray-200 focus:ring-[#1B59F8]"
-            }`}
+            required
+            disabled={isSubmitting}
           />
-          <div className="flex justify-between items-center mt-1">
-            {reason.length > 0 && reason.length < MIN_REASON_LENGTH ? (
-              <p className="text-xs text-[#C91E1E]">
-                Please provide at least {MIN_REASON_LENGTH} characters
-              </p>
-            ) : (
-              <span />
-            )}
-            <p className={`text-xs ml-auto ${
-              reason.length >= MIN_REASON_LENGTH ? "text-green-600" : "text-gray-400"
-            }`}>
-              {reason.length} / {MIN_REASON_LENGTH}
+        </div>
+
+        <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-lg">
+          <span className="text-blue-500 text-lg">🔑</span>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-blue-800">About Role Upgrades</p>
+            <p className="text-xs text-blue-700 mt-1">
+              Role upgrade requests are reviewed by administrators. You will receive a notification once your request is processed. This may take 1-3 business days.
             </p>
           </div>
         </div>
-      )}
 
-      <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-md px-4 py-3 mb-5">
-        <Info className="w-4 h-4 text-[#1B59F8] mt-0.5 shrink-0" />
-        <p className="text-xs text-[#1B59F8]">
-          Role upgrade requests are reviewed by administrators. You will receive a notification once your request is processed.
-        </p>
-      </div>
-
-      <button
-        onClick={handleSubmit}
-        disabled={!selectedRole || reason.length < MIN_REASON_LENGTH}
-        className="w-full bg-[#C91E1E] hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-md text-sm font-medium transition"
-      >
-        Submit Request
-      </button>
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            disabled={isSubmitting || !selectedRole || !reason}
+            className="px-6 py-2.5 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              "Submit Request"
+            )}
+          </button>
+        </div>
+      </form>
     </div>
   );
 };

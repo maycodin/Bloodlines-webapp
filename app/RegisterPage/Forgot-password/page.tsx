@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { API_URL } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 export default function ForgotPasswordPage() {
@@ -38,7 +39,6 @@ export default function ForgotPasswordPage() {
     setSuccess(false);
 
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://bloodlines-api-service.onrender.com';
       
       const response = await fetch(`${API_URL}/auth/forgot-password`, {
         method: 'POST',

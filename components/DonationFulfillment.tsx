@@ -1,4 +1,3 @@
-// components/CurvedProgressFulfillment.tsx
 import React from 'react';
 import { TrendingUp, Calendar } from 'lucide-react';
 

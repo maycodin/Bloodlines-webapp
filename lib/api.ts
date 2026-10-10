@@ -1,7 +1,12 @@
 // lib/api.ts
 import { io, Socket } from 'socket.io-client';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+// The one place the backend address is set. Override it with NEXT_PUBLIC_API_URL in .env.local
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://bloodlines-core.onrender.com';
+
+// Some endpoints return a plain array, others wrap it as { data: [...] }. This handles both.
+export const toList = <T = any>(res: any): T[] =>
+  Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
 
 // Helper to get auth token
 const getAuthToken = () => {
@@ -43,7 +48,6 @@ const authFetch = async (endpoint: string, options: RequestInit = {}, retryCount
     
     // If unauthorized (401) and we haven't retried yet, try to refresh token
     if (response.status === 401 && retryCount === 0) {
-      console.log('🔄 Token expired, attempting refresh...');
       const refreshed = await auth.refreshToken();
       
       if (refreshed) {
@@ -59,15 +63,11 @@ const authFetch = async (endpoint: string, options: RequestInit = {}, retryCount
           headers: newHeaders,
         });
         
-        if (response.ok) {
-          console.log('✅ Request succeeded after token refresh');
-        } else {
-          // If still unauthorized, force logout
-          if (response.status === 401) {
-            clearAuthTokens();
-            window.dispatchEvent(new Event('auth:logout'));
-            throw new Error('Session expired. Please login again.');
-          }
+        // If still unauthorized, force logout
+        if (response.status === 401) {
+          clearAuthTokens();
+          window.dispatchEvent(new Event('auth:logout'));
+          throw new Error('Session expired. Please login again.');
         }
       } else {
         // Refresh failed, clear tokens and force logout
@@ -85,6 +85,11 @@ const authFetch = async (endpoint: string, options: RequestInit = {}, retryCount
         errorMessage = error.message || error.error || `Request failed with status ${response.status}`;
       } catch {
         errorMessage = `Request failed with status ${response.status}`;
+      }
+      if (response.status >= 500) {
+        // Server-side failure: log the raw reason for developers, show users something clearer
+        console.error(`Server error ${response.status} on ${endpoint}:`, errorMessage);
+        errorMessage = `Something went wrong on the server (error ${response.status}). Please try again later.`;
       }
       throw new Error(errorMessage);
     }
@@ -122,8 +127,11 @@ export interface UserProfile {
 
 export interface BloodRequest {
   id: string;
+  _id?: string; // MongoDB id, returned by the /blood-requests endpoints
   bloodType: string;
-  priorityLevel: 'CRITICAL' | 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
+  priorityLevel: 'CRITICAL' | 'URGENT' | 'SCHEDULED' | 'HIGH' | 'MEDIUM' | 'LOW';
+  // Some endpoints (e.g. the donor dashboard) name this field "priority"
+  priority?: 'CRITICAL' | 'URGENT' | 'SCHEDULED';
   unitsNeeded: number;
   contactPhone: string;
   facilityName: string;
@@ -138,9 +146,57 @@ export interface BloodRequest {
   status: 'PENDING' | 'ACCEPTED' | 'FULFILLED' | 'CANCELLED';
   hospitalId: string;
   hospitalName?: string;
+  // Field names used by the donor endpoints (DonationRequest in the API docs)
+  address?: string;
+  instructions?: string;
+  distance?: number;
   createdAt: string;
   updatedAt: string;
 }
+
+// GET /donor/profile (DonorProfile in the API docs)
+export interface DonorProfile {
+  id: string;
+  fullName: string;
+  email: string;
+  phoneNumber: string;
+  bloodGroup: string;
+  genotype?: string;
+  gender: string;
+  latitude: number;
+  longitude: number;
+  location?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  lastDonationDate?: string;
+  isAvailable: boolean;
+  emergencyContact?: string;
+  emergencyContactPhone?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// POST /donor/profile body (UpdateProfileInput in the API docs); every field is optional
+export type DonorProfileInput = Partial<{
+  fullName: string;
+  phoneNumber: string;
+  bloodGroup: string;
+  genotype: string;
+  gender: string;
+  latitude: number;
+  longitude: number;
+  location: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  lastDonationDate: string;
+  isAvailable: boolean;
+  emergencyContact: string;
+  emergencyContactPhone: string;
+}>;
 
 export interface PaginatedResponse<T> {
   data: T[];
@@ -174,7 +230,6 @@ export const auth = {
   signup: async (data: SignupData): Promise<ApiResponse> => {
     try {
       const url = `${API_URL}/auth/signup`;
-      console.log('📤 Sending to:', url);
       
       const response = await fetch(url, {
         method: 'POST',
@@ -215,7 +270,6 @@ export const auth = {
   login: async (email: string, password: string, remember: boolean = false): Promise<ApiResponse> => {
   try {
     const url = `${API_URL}/auth/login`;
-    console.log('🔐 Login to:', url);
     
     const response = await fetch(url, {
       method: 'POST',
@@ -226,9 +280,6 @@ export const auth = {
     });
     
     const result = await response.json();
-    console.log('🔑 Login response:', result);
-    console.log('🔑 Response status:', response.status);
-    
     if (!response.ok) {
       throw new Error(result.message || 'Login failed');
     }
@@ -252,7 +303,7 @@ export const auth = {
       const refreshToken = localStorage.getItem('refreshToken') || sessionStorage.getItem('refreshToken');
       if (!refreshToken) return null;
       
-      const response = await fetch(`${API_URL}/auth/refresh`, {
+      const response = await fetch(`${API_URL}/auth/refresh-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
@@ -263,15 +314,17 @@ export const auth = {
       }
       
       const result = await response.json();
-      if (result.access_token) {
-        // Keep the token in the same storage as the refresh token
-        if (localStorage.getItem('refreshToken')) {
-          localStorage.setItem('token', result.access_token);
-        } else {
-          sessionStorage.setItem('token', result.access_token);
-        }
+      // The API docs don't name the token fields, so accept the common spellings
+      const newToken = result.accessToken || result.access_token || result.token;
+      const newRefreshToken = result.refreshToken || result.refresh_token;
+      if (!newToken) {
+        throw new Error('Token refresh returned no access token');
       }
-      return result;
+      // Keep the tokens in the same storage as the existing refresh token
+      const storage = localStorage.getItem('refreshToken') ? localStorage : sessionStorage;
+      storage.setItem('token', newToken);
+      if (newRefreshToken) storage.setItem('refreshToken', newRefreshToken);
+      return { access_token: newToken };
     } catch (error) {
       console.error('Token refresh failed:', error);
       clearAuthTokens();
@@ -316,7 +369,6 @@ export const auth = {
   forgotPassword: async (email: string): Promise<ApiResponse> => {
     try {
       const url = `${API_URL}/auth/forgot-password`;
-      console.log('🔐 Forgot password request to:', url);
       
       const response = await fetch(url, {
         method: 'POST',
@@ -391,39 +443,40 @@ export const donor = {
     return authFetch('/donor/dashboard');
   },
 
-  getProfile: async (): Promise<UserProfile> => {
-    return authFetch('/donor/profile');
+  getProfile: async (): Promise<DonorProfile> => {
+    const profile = await authFetch('/donor/profile');
+    return { ...profile, id: profile?.id ?? profile?._id };
   },
   
-  updateProfile: async (data: Partial<UserProfile>): Promise<UserProfile> => {
+  updateProfile: async (data: DonorProfileInput): Promise<DonorProfile> => {
     return authFetch('/donor/profile', {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  },
-  
-  getNearbyRequests: async (params?: { lat?: number; lng?: number; radius?: number }): Promise<PaginatedResponse<BloodRequest>> => {
-    const query = params ? `?${new URLSearchParams(params as any).toString()}` : '';
-    return authFetch(`/donor/blood-requests/nearby${query}`);
-  },
-  
-  getGoals: async (): Promise<PaginatedResponse<any>> => {
-    return authFetch('/donor/goals');
-  },
-  
-  createGoal: async (data: { target: number; targetDate?: string }): Promise<any> => {
-    return authFetch('/donor/goals', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
   
-  getHealthScreenings: async (): Promise<PaginatedResponse<any>> => {
-    return authFetch('/donor/health-screening');
+  getNearbyRequests: async (params?: { page?: number; limit?: number; radiusKm?: number }): Promise<any> => {
+    const query = params ? `?${new URLSearchParams(params as any).toString()}` : '';
+    return authFetch(`/donor/nearby-requests${query}`);
+  },
+  
+  getGoal: async (): Promise<any> => {
+    return authFetch('/donor/goal');
+  },
+  
+  createGoal: async (data: { target: number; targetDate?: string }): Promise<any> => {
+    return authFetch('/donor/goal', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  
+  getHealthScreeningQuestions: async (): Promise<any> => {
+    return authFetch('/donor/health-screening/questions');
   },
   
   submitHealthScreening: async (answers: Record<string, any>): Promise<{ cleared: boolean; deferredReason?: string }> => {
-    return authFetch('/donor/health-screening', {
+    return authFetch('/donor/health-screening/submit', {
       method: 'POST',
       body: JSON.stringify({ answers }),
     });
@@ -434,7 +487,9 @@ export const donor = {
 export const users = {
   // GET /users/me - Get current user's profile (works for all roles)
   getMyProfile: async (): Promise<UserProfile> => {
-    return authFetch('/users/me');
+    const profile = await authFetch('/users/me');
+    // MongoDB returns _id; the rest of the app expects id
+    return { ...profile, id: profile?.id ?? profile?._id };
   },
   
   // GET /users/{id} - Get another user's profile by ID
@@ -442,11 +497,21 @@ export const users = {
     return authFetch(`/users/${userId}`);
   },
   
-  // POST /users/profile - Update current user's profile
-  updateMyProfile: async (profileData: Partial<UserProfile>): Promise<UserProfile> => {
-    return authFetch('/users/profile', {
-      method: 'POST',
-      body: JSON.stringify(profileData),
+  // PUT /users/me - Update current user's profile
+  // Only sends fields that have a value, so a blank form field never wipes saved data
+  updateMyProfile: async (profileData: {
+    fullName?: string;
+    phoneNumber?: string;
+    location?: string;
+    bloodGroup?: string;
+    genotype?: string;
+  }): Promise<UserProfile> => {
+    const body = Object.fromEntries(
+      Object.entries(profileData).filter(([, value]) => typeof value === 'string' && value.trim() !== '')
+    );
+    return authFetch('/users/me', {
+      method: 'PUT',
+      body: JSON.stringify(body),
     });
   },
 };
@@ -454,6 +519,24 @@ export const users = {
 export const bridger = {
   getDashboard: async (): Promise<any> => {
     return authFetch('/bridger/dashboard');
+  },
+
+  // POST /bridger/emergency-alert - Alert eligible donors of the given blood groups
+  sendEmergencyAlert: async (data: {
+    targetBloodGroups: string[];
+    message: string;
+  }): Promise<any> => {
+    return authFetch('/bridger/emergency-alert', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // POST /bridger/fulfill-request/{requestId} - Mark a request as fulfilled
+  fulfillRequest: async (requestId: string): Promise<any> => {
+    return authFetch(`/bridger/fulfill-request/${requestId}`, {
+      method: 'POST',
+    });
   },
 };
 
@@ -469,12 +552,34 @@ export const admin = {
   },
 };
 
+// ============ Role Upgrades Module ============
+export const roleUpgrades = {
+  // GET /role-upgrades/my-history - The current user's own upgrade requests
+  getMyHistory: async (): Promise<any[]> => {
+    return authFetch('/role-upgrades/my-history');
+  },
+
+  // POST /role-upgrades/request - Ask to become a Bridger or Pulse Leader
+  request: async (data: {
+    requestedRole: 'BRIDGER' | 'PULSE_LEADER';
+    reason?: string;
+    facilityName?: string;
+    facilityAddress?: string;
+  }): Promise<any> => {
+    return authFetch('/role-upgrades/request', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+};
+
 // ============ Blood Requests Module ============
 export const bloodRequests = {
   // POST /blood-requests - Create a new blood request
+  // Fields match CreateBloodRequestDto in the live API docs (bloodlines-core.onrender.com/api)
   create: async (data: {
     bloodType: string;
-    priorityLevel: 'CRITICAL' | 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
+    priorityLevel: 'CRITICAL' | 'URGENT' | 'SCHEDULED';
     unitsNeeded: number;
     contactPhone: string;
     facilityName: string;
@@ -484,8 +589,8 @@ export const bloodRequests = {
       coordinates: [number, number]; // [longitude, latitude]
     };
     additionalNotes?: string;
-    patientCondition: string;
-    requiredByDate: string;
+    patientCondition?: string;
+    requiredByDate?: string;
   }): Promise<BloodRequest> => {
     return authFetch('/blood-requests', {
       method: 'POST',
@@ -514,14 +619,9 @@ export const bloodRequests = {
     return authFetch(`/blood-requests/all${query}`);
   },
 
-  // GET /blood-requests/my - Get bridger's own requests
-  getMyRequests: async (params?: {
-    status?: string;
-    page?: number;
-    limit?: number;
-  }): Promise<PaginatedResponse<BloodRequest>> => {
-    const query = params ? `?${new URLSearchParams(params as any).toString()}` : '';
-    return authFetch(`/blood-requests/my${query}`);
+  // GET /blood-requests/my - Get bridger's own requests (returns a plain array)
+  getMyRequests: async (): Promise<BloodRequest[]> => {
+    return toList<BloodRequest>(await authFetch('/blood-requests/my'));
   },
 
   // GET /blood-requests/donor - Get requests for donor (matched by blood type and location)
@@ -544,13 +644,6 @@ export const bloodRequests = {
   // POST /blood-requests/{requestId}/accept - Accept a request (donor)
   accept: async (id: string): Promise<{ success: boolean; message: string }> => {
     return authFetch(`/blood-requests/${id}/accept`, {
-      method: 'POST',
-    });
-  },
-
-  // POST /blood-requests/{requestId}/confirm - Confirm fulfillment (bridger)
-  confirm: async (id: string): Promise<{ success: boolean; message: string }> => {
-    return authFetch(`/blood-requests/${id}/confirm`, {
       method: 'POST',
     });
   },
@@ -603,24 +696,6 @@ export const bloodRequests = {
     });
   },
 
-  // GET /blood-requests/{id}/match - Get compatible donors (for bridger)
-  getMatches: async (requestId: string): Promise<{
-    donors: Array<{ id: string; fullName: string; bloodType: string; distance: number; phoneNumber?: string; email?: string; lastDonationDate?: string }>;
-  }> => {
-    return authFetch(`/blood-requests/${requestId}/match`);
-  },
-
-  // POST /blood-requests/emergency - Emergency broadcast (bridger/pulse leader)
-  emergencyBroadcast: async (data: {
-    requestId: string;
-    bloodType: string;
-    message: string;
-  }): Promise<{ broadcastId: string; recipientCount: number }> => {
-    return authFetch('/blood-requests/emergency', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
 };
 
 // ============ Pulse Leader Module ============
@@ -677,7 +752,7 @@ export const analytics = {
 export const inventory = {
   getAuditLogs: async (params?: { page?: number; limit?: number }): Promise<PaginatedResponse<any>> => {
     const query = params ? `?${new URLSearchParams(params as any).toString()}` : '';
-    return authFetch(`/inventory/logs${query}`);
+    return authFetch(`/inventory/audit${query}`);
   },
 };
 
@@ -699,14 +774,6 @@ export const initializeSocket = (token?: string): Socket => {
     reconnection: true,
     reconnectionAttempts: 5,
     reconnectionDelay: 1000,
-  });
-  
-  socket.on('connect', () => {
-    console.log('🔌 Socket.IO connected');
-  });
-  
-  socket.on('disconnect', (reason) => {
-    console.log('🔌 Socket.IO disconnected:', reason);
   });
   
   socket.on('connect_error', (error) => {
@@ -752,7 +819,5 @@ export const offSocketEvent = (event: string, callback?: (data: any) => void) =>
 export const emitSocketEvent = (event: string, data: any) => {
   if (socket?.connected) {
     socket.emit(event, data);
-  } else {
-    console.warn(`Cannot emit ${event}: Socket not connected`);
   }
 };

@@ -2,7 +2,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { auth, UserProfile } from '@/lib/api';
+import { auth, users, roleUpgrades, UserProfile } from '@/lib/api';
 import { useRouter, usePathname } from 'next/navigation';
 
 interface AuthContextType {
@@ -30,7 +30,11 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-// Public routes that don't require authentication
+// Open routes: anyone can view these, logged in or not (matched exactly)
+const openRoutes = ['/', '/RegisterPage'];
+
+// Public routes that don't require authentication.
+// Logged-in users are sent from these to their dashboard.
 const publicRoutes = ['/RegisterPage/Login', '/RegisterPage/Signup', '/RegisterPage/Forgot-password', '/reset-password', '/verify-email', '/check-email'];
 
 // Role-based route mappings
@@ -50,33 +54,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // contexts/AuthContext.tsx - Update refreshUser
 
 const refreshUser = async () => {
-  try {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-    console.log('🔄 Refreshing user... Token:', token ? 'Present' : 'Missing');
-    
-    if (!token) {
-      setUser(null);
-      return;
-    }
-    
-    // ✅ Use the generic user endpoint
-    const { users } = await import('@/lib/api');
-    const profile = await users.getMyProfile();
-    if (profile && profile.role) {
-  profile.role = normalizeRole(profile.role) as any;
-}
-setUser(profile);
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+  if (!token) {
+    setUser(null);
+    return;
+  }
 
-    console.log('✅ User refreshed:', profile);
-  } catch (error) {
-    console.error('❌ Failed to refresh user:', error);
-    const result = await auth.refreshToken();
-    if (!result) {
-      localStorage.removeItem('token');
-      sessionStorage.removeItem('token');
-      setUser(null);
+  // Try up to 3 times, so a slow or briefly unreachable server doesn't log the user out
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const profile = await users.getMyProfile();
+      if (profile && profile.role) {
+        profile.role = normalizeRole(profile.role) as any;
+      }
+      setUser(profile);
+      return;
+    } catch (error: any) {
+      // authFetch has already tried a token refresh, so this means the session really ended
+      if (error?.message?.startsWith('Session expired')) {
+        setUser(null);
+        return;
+      }
+      console.error(`Failed to load user (attempt ${attempt} of 3):`, error);
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
     }
   }
+  setUser(null);
 };
 
 const normalizeRole = (role: string): 'donor' | 'bridger' | 'pulse-leader' | 'admin' => {
@@ -94,7 +99,6 @@ const normalizeRole = (role: string): 'donor' | 'bridger' | 'pulse-leader' | 'ad
       setIsLoading(true);
       try {
         const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-        console.log('🔐 Auth init - Token:', token ? 'Present' : 'Missing');
         if (token) {
           await refreshUser();
         } else {
@@ -105,33 +109,33 @@ const normalizeRole = (role: string): 'donor' | 'bridger' | 'pulse-leader' | 'ad
         setUser(null);
       } finally {
         setIsLoading(false);
-        console.log('🏁 Auth init complete - isLoading:', false);
       }
     };
     initAuth();
   }, []);
 
+  // lib/api.ts fires 'auth:logout' when a session can't be refreshed
+  useEffect(() => {
+    const handleForcedLogout = () => setUser(null);
+    window.addEventListener('auth:logout', handleForcedLogout);
+    return () => window.removeEventListener('auth:logout', handleForcedLogout);
+  }, []);
+
   // Route protection logic
   useEffect(() => {
     if (!isLoading) {
+      // Landing page and role chooser: no redirect for anyone
+      if (openRoutes.includes(pathname || '')) return;
+
       const isPublicRoute = publicRoutes.some(route => pathname?.includes(route));
-      console.log('🔍 Route protection check:', { 
-        isPublicRoute, 
-        hasUser: !!user, 
-        userRole: user?.role,
-        pathname,
-        isLoading 
-      });
       
       if (!user && !isPublicRoute) {
         // Not authenticated and trying to access protected route
-        console.log('🚪 Redirecting to login (not authenticated)');
         router.push('/RegisterPage/Login');
       } else if (user && isPublicRoute) {
         // Authenticated user trying to access login/signup pages
         const userRole = user.role || 'donor';
         const redirectPath = roleRoutes[userRole as keyof typeof roleRoutes] || '/DonorDashboard';
-        console.log(`🔄 Authenticated user on public route, redirecting to: ${redirectPath}`);
         router.push(redirectPath);
       } else if (user && !isPublicRoute) {
         // Check if user has access to the current route based on role
@@ -141,13 +145,10 @@ const normalizeRole = (role: string): 'donor' | 'bridger' | 'pulse-leader' | 'ad
         
         // If user is trying to access a dashboard that doesn't match their role
         if (currentPath.includes('BridgerDashboard') && userRole !== 'bridger') {
-          console.log(`🚫 Role ${userRole} cannot access BridgerDashboard, redirecting to ${expectedPath || '/DonorDashboard'}`);
           router.push(expectedPath || '/DonorDashboard');
         } else if (currentPath.includes('PulseLeader') && userRole !== 'pulse-leader') {
-          console.log(`🚫 Role ${userRole} cannot access PulseLeader, redirecting to ${expectedPath || '/DonorDashboard'}`);
           router.push(expectedPath || '/DonorDashboard');
         } else if (currentPath.includes('admin') && userRole !== 'admin') {
-          console.log(`🚫 Role ${userRole} cannot access admin, redirecting to ${expectedPath || '/DonorDashboard'}`);
           router.push(expectedPath || '/DonorDashboard');
         }
       }
@@ -161,7 +162,6 @@ const normalizeRole = (role: string): 'donor' | 'bridger' | 'pulse-leader' | 'ad
 
 const login = async (email: string, password: string, remember = false) => {
   try {
-    console.log('🔐 Attempting login...');
     const result = await auth.login(email, password);
     
     if (!result.success || !result.data) {
@@ -173,19 +173,18 @@ const login = async (email: string, password: string, remember = false) => {
     if (token) {
       if (remember) {
         localStorage.setItem('token', token);
-        console.log('💾 Token stored in localStorage');
       } else {
         sessionStorage.setItem('token', token);
-        console.log('💾 Token stored in sessionStorage');
       }
     }
     
     // Store refresh token if provided
-    if (result.data.refreshToken) {
+    const refreshToken = result.data.refreshToken || result.data.refresh_token;
+    if (refreshToken) {
       if (remember) {
-        localStorage.setItem('refreshToken', result.data.refreshToken);
+        localStorage.setItem('refreshToken', refreshToken);
       } else {
-        sessionStorage.setItem('refreshToken', result.data.refreshToken);
+        sessionStorage.setItem('refreshToken', refreshToken);
       }
     }
     
@@ -211,7 +210,6 @@ const login = async (email: string, password: string, remember = false) => {
     };
     
     const redirectPath = redirectMap[normalizedRole] || '/DonorDashboard';
-    console.log(`🔄 Redirecting to: ${redirectPath} for role: ${normalizedRole}`);
     
     // ✅ Use window.location for a hard redirect to ensure clean state
     window.location.href = redirectPath;
@@ -224,72 +222,17 @@ const login = async (email: string, password: string, remember = false) => {
 
   // Logout function
   const logout = () => {
-    console.log('🔓 Logging out...');
-    localStorage.removeItem('token');
-    sessionStorage.removeItem('token');
+    // Clears the access token AND the refresh token from both storages
+    auth.logout();
     setUser(null);
     router.push('/RegisterPage/Login');
   };
 
   // Role upgrade function
   const requestRoleUpgrade = async (role: string, details: any) => {
-  try {
-    // Get the token directly
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-    
-    if (!token) {
-      throw new Error('No authentication token found. Please login again.');
-    }
-    
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/role-upgrades/request`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({ requestedRole: role, ...details }),
-    });
-    
-    // If unauthorized, try to refresh token
-    if (response.status === 401) {
-      console.log('🔄 Token expired during role upgrade, attempting refresh...');
-      const refreshed = await auth.refreshToken();
-      
-      if (refreshed) {
-        // Retry with new token
-        const newToken = localStorage.getItem('token') || sessionStorage.getItem('token');
-        const retryResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/role-upgrades/request`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${newToken}`,
-          },
-          body: JSON.stringify({ requestedRole: role, ...details }),
-        });
-        
-        if (!retryResponse.ok) {
-          const error = await retryResponse.json();
-          throw new Error(error.message || 'Failed to submit role upgrade request');
-        }
-        
-        return retryResponse.json();
-      } else {
-        throw new Error('Session expired. Please login again.');
-      }
-    }
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to submit role upgrade request');
-    }
-    
-    return response.json();
-    
-  } catch (error) {
-    console.error('❌ Role upgrade error:', error);
-    throw error;
-  }
-};
+    // Goes through lib/api.ts, which adds the token and refreshes it if needed
+    return roleUpgrades.request({ requestedRole: role as 'BRIDGER' | 'PULSE_LEADER', ...details });
+  };
 
   // Context value
   const value = {
@@ -303,12 +246,6 @@ const login = async (email: string, password: string, remember = false) => {
     requestRoleUpgrade,
   };
 
-  // console.log('📊 AuthContext state:', { 
-  //   isLoading: value.isLoading, 
-  //   isAuthenticated: value.isAuthenticated, 
-  //   userRole: value.userRole,
-  //   hasUser: !!user 
-  // });
 
   return (
     <AuthContext.Provider value={value}>

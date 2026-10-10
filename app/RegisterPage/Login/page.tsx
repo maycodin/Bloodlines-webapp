@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { API_URL } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/contexts/AuthContext";
+import InlineMessage, { Message } from "@/components/InlineMessage";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,12 +19,12 @@ export default function LoginPage() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [needsVerification, setNeedsVerification] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState("");
+  const [resendMessage, setResendMessage] = useState<Message | null>(null);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
   // Redirect if already authenticated
   useEffect(() => {
     if (!authLoading && isAuthenticated && user) {
-      console.log('🔐 Already authenticated, redirecting to:', user.role);
       if (user.role === 'pulse-leader') {
         router.push('/PulseLeader');
       } else if (user.role === 'bridger') {
@@ -55,6 +57,7 @@ export default function LoginPage() {
   setIsLoading(true);
   setServerError(null);
   setNeedsVerification(false);
+  setResendMessage(null);
 
   try {
     await login(email, password, remember);
@@ -76,7 +79,6 @@ export default function LoginPage() {
 
   const resendVerification = async () => {
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://bloodlines-api-service.onrender.com';
       const response = await fetch(`${API_URL}/auth/resend-verification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -84,14 +86,14 @@ export default function LoginPage() {
       });
       
       if (response.ok) {
-        alert("Verification email resent! Please check your inbox.");
+        setResendMessage({ type: "success", text: "Verification email resent! Please check your inbox." });
       } else {
         const data = await response.json();
-        alert(data.message || "Failed to resend verification email.");
+        setResendMessage({ type: "error", text: data.message || "Failed to resend verification email." });
       }
     } catch (error) {
       console.error("Resend verification error:", error);
-      alert("Failed to resend verification email. Please try again.");
+      setResendMessage({ type: "error", text: "Failed to resend verification email. Please try again." });
     }
   };
 
@@ -171,6 +173,8 @@ export default function LoginPage() {
                   <p className="text-xs text-red-500 mt-1">{errors.password}</p>
                 )}
               </div>
+
+              <InlineMessage message={resendMessage} />
 
               {needsVerification && (
                 <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">

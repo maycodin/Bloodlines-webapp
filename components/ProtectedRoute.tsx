@@ -25,7 +25,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
 
   useEffect(() => {
     if (isLoading) {
-      console.log('⏳ ProtectedRoute: Auth is loading, waiting...');
       return;
     }
 
@@ -33,19 +32,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
     // ✅ Normalize PULSE_LEADER → pulse-leader
     const userRole = normalizeRole(user?.role || 'donor');
 
-    console.log('🔍 ProtectedRoute: Auth check', {
-      isLoading,
-      isAuthenticated,
-      isAuth,
-      userRole,
-      originalRole: user?.role,
-      hasUser: !!user,
-      pathname,
-      allowedRoles
-    });
 
     if (!isAuth) {
-      console.log('🚪 Not authenticated, redirecting to login');
       setIsRedirecting(true);
       router.push('/RegisterPage/Login');
       return;
@@ -55,7 +43,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
     const normalizedAllowedRoles = allowedRoles?.map(role => normalizeRole(role)) || [];
 
     if (normalizedAllowedRoles.length > 0 && !normalizedAllowedRoles.includes(userRole)) {
-  console.log(`🚫 Role ${userRole} not allowed. Allowed: ${normalizedAllowedRoles.join(', ')}`);
   setIsRedirecting(true);
   const redirectMap: Record<string, string> = {
     donor: '/DonorDashboard',
@@ -69,7 +56,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
   return;
 }
 
-    console.log('✅ Access granted for role:', userRole);
     setIsRedirecting(false);
     
   }, [isLoading, isAuthenticated, user, router, allowedRoles, pathname]);
