@@ -21,12 +21,25 @@ const CompleteProfile = ({
     phoneNumber: { label: "Phone Number", icon: <Phone className="w-4 h-4" /> },
     bloodGroup: { label: "Blood Group", icon: <Droplets className="w-4 h-4" /> },
     genotype: { label: "Genotype", icon: <Droplets className="w-4 h-4" /> },
-    geoLocation: { label: "Location", icon: <MapPin className="w-4 h-4" /> },
-    emergencyContact: { label: "Emergency Contact", icon: <Phone className="w-4 h-4" /> },
+    gender: { label: "Gender", icon: <UserPlus className="w-4 h-4" /> },
+    // "location" is the area typed in; "geoLocation" is the map position from "Use my current location"
+    location: { label: "Location (area)", icon: <MapPin className="w-4 h-4" /> },
+    geoLocation: { label: "Map Location", icon: <MapPin className="w-4 h-4" /> },
+    address: { label: "Street Address", icon: <MapPin className="w-4 h-4" /> },
+    city: { label: "City", icon: <MapPin className="w-4 h-4" /> },
+    state: { label: "State", icon: <MapPin className="w-4 h-4" /> },
+    country: { label: "Country", icon: <MapPin className="w-4 h-4" /> },
+    lastDonationDate: { label: "Last Donation Date", icon: <Droplets className="w-4 h-4" /> },
+    isAvailable: { label: "Availability", icon: <CheckCircle className="w-4 h-4" /> },
+    emergencyContact: { label: "Emergency Contact Name", icon: <Phone className="w-4 h-4" /> },
+    emergencyContactPhone: { label: "Emergency Contact Phone", icon: <Phone className="w-4 h-4" /> },
   };
 
   const getFieldDisplay = (field: string) => {
-    return fieldMap[field]?.label || field.charAt(0).toUpperCase() + field.slice(1);
+    if (fieldMap[field]) return fieldMap[field].label;
+    // Fallback: turn camelCase into words, e.g. "bloodBank" -> "Blood bank"
+    const words = field.replace(/([A-Z])/g, ' $1').toLowerCase().trim();
+    return words.charAt(0).toUpperCase() + words.slice(1);
   };
 
   const getFieldIcon = (field: string) => {
@@ -131,7 +144,7 @@ const CompleteProfile = ({
       {!isComplete && (
         <p className="text-sm text-gray-500 mt-3">
           {remainingFields.length > 0 
-            ? `Complete your ${remainingFields.join(', ')} to reach 100%`
+            ? `Add your ${remainingFields.map((field) => getFieldDisplay(field).toLowerCase()).join(', ')} to reach 100%`
             : "Add your emergency contact and verify your location to help us match you with nearby requests."}
         </p>
       )}

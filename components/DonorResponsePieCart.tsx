@@ -1,4 +1,3 @@
-// components/DonorResponsePieChart.tsx (Compact 240px)
 'use client';
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';

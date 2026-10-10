@@ -1,14 +1,17 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { TriangleAlert, History, Users, CircleArrowUp, Mail, Phone, MapPin, Droplets, Calendar, Loader2, Edit2, Save, X } from "lucide-react";
+import { TriangleAlert, History, Users, Loader2 } from "lucide-react";
 import DonorNavbar from "@/components/DonorNavbar";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import SuccessModal from "@/components/SuccessModal";
 import CompleteProfile from "@/components/CompleteProfile";
 import DonorOverview from "@/components/DonorOverview";
 import NearbyRequests from "@/components/NearbyRequests";
-import { donor, UserProfile, BloodRequest, users, bloodRequests, pulseLeader } from "@/lib/api";
+import InlineMessage, { Message } from "@/components/InlineMessage";
+import RoleUpgradeForm from "@/components/RoleUpgradeForm";
+import DonorProfileForm from "@/components/DonorProfileForm";
+import { donor, UserProfile, BloodRequest, users, bloodRequests, roleUpgrades } from "@/lib/api";
 import { useAuth } from "@/app/contexts/AuthContext";
 
 type Page = "home" | "resources" | "profile";
@@ -16,7 +19,7 @@ type Page = "home" | "resources" | "profile";
 type DonationStatus = "Donated" | "Deferred";
 
 type DonationRecord = {
-  id: number;
+  id: string;
   hospital: string;
   date: string;
   type: string;
@@ -24,7 +27,7 @@ type DonationRecord = {
 };
 
 type ActivityRecord = {
-  id: number;
+  id: string;
   name: string;
   action: string;
   location: string;
@@ -50,7 +53,7 @@ const donationStatusStyles: Record<DonationStatus, string> = {
 };
 
 const DonorDashboard = () => {
-  const { user: authUser, requestRoleUpgrade, refreshUser } = useAuth();
+  const { user: authUser, refreshUser } = useAuth();
   const [activePage, setActivePage] = useState<Page>("home");
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   
@@ -73,33 +76,18 @@ const DonorDashboard = () => {
   remainingFields: []
 });
   
-  // Profile edit state
-  const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({
-    fullName: "",
-    phoneNumber: "",
-    bloodGroup: "",
-    location: "",
-  });
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [acceptMessage, setAcceptMessage] = useState<Message | null>(null);
   
-  // Role upgrade state
-  const [selectedRole, setSelectedRole] = useState('');
-  const [communityName, setCommunityName] = useState('');
-  const [facilityName, setFacilityName] = useState('');
-  const [facilityAddress, setFacilityAddress] = useState('');
-  const [reason, setReason] = useState('');
-  const [isSubmittingUpgrade, setIsSubmittingUpgrade] = useState(false);
-  const [upgradeMessage, setUpgradeMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // Role upgrade history
   const [upgradeHistory, setUpgradeHistory] = useState<any[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const fetchUpgradeHistory = async () => {
   setIsLoadingHistory(true);
   try {
-    const history = await pulseLeader.getUpgradeHistory();
-    setUpgradeHistory(history.data || []);
+    const history: any = await roleUpgrades.getMyHistory();
+    // The backend returns a plain list; also accept a { data: [...] } wrapper
+    setUpgradeHistory(Array.isArray(history) ? history : history?.data || []);
   } catch (error) {
     console.error('Failed to fetch upgrade history:', error);
   } finally {
@@ -108,13 +96,9 @@ const DonorDashboard = () => {
 };
 
  
- // In DonorDashboard - Replace the entire fetchDashboardData function
-
-// In DonorDashboard - Fix the useEffect
-
-useEffect(() => {
-  const fetchDashboardData = async () => {
-    setLoading(true);
+  // Loads everything on the Home tab. Pass { silent: true } to refresh without the loading spinner.
+  const fetchDashboardData = async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) setLoading(true);
     setError(null);
     
     try {
@@ -127,7 +111,6 @@ useEffect(() => {
         return;
       }
       
-      console.log('📊 Dashboard data:', dashboardData);
       
       // 1. Set profile data
       if (dashboardData.profileCompletion) {
@@ -167,6 +150,18 @@ useEffect(() => {
         }
       }
       
+      // 1b. Fill in the real account details (email, phone, location, join date) from /users/me
+      const me = await users.getMyProfile().catch(() => null);
+      if (me) {
+        setProfile((prev) => ({
+          ...(prev || {}),
+          ...me,
+          // Keep dashboard-only values when /users/me doesn't have them
+          bloodGroup: me.bloodGroup || prev?.bloodGroup || '',
+          profileCompletion: prev?.profileCompletion ?? me.profileCompletion,
+        }) as UserProfile);
+      }
+      
       // 2. Set impact data
       if (dashboardData.impact) {
         setDashboardSummary({
@@ -197,8 +192,9 @@ useEffect(() => {
       
       // 5. Set donation history
       if (dashboardData.donationHistory) {
-        const formattedHistory = dashboardData.donationHistory.map((item: any) => ({
-          id: parseInt(item.id) || 0,
+        const formattedHistory = dashboardData.donationHistory.map((item: any, index: number) => ({
+          // Ids are MongoDB strings; fall back to the position so React keys stay unique
+          id: String(item.id || item._id || `donation-${index}`),
           hospital: item.hospitalName || item.facilityName || 'Hospital',
           date: new Date(item.donatedAt).toLocaleDateString(),
           type: item.bloodType || 'Blood',
@@ -209,8 +205,8 @@ useEffect(() => {
       
       // 6. Set community activity
       if (dashboardData.communityActivity) {
-        const formattedActivity = dashboardData.communityActivity.map((item: any) => ({
-          id: parseInt(item.id) || 0,
+        const formattedActivity = dashboardData.communityActivity.map((item: any, index: number) => ({
+          id: String(item.id || item._id || `activity-${index}`),
           name: item.actorName || 'Someone',
           action: item.message?.replace(item.actorName || '', '').trim() || 'made a donation',
           location: 'Your Community',
@@ -226,9 +222,10 @@ useEffect(() => {
       setLoading(false);
     }
   };
-  
-  fetchDashboardData();
-}, []); // ✅ Make sure this closing bracket is correct
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
 
   useEffect(() => {
     if (activePage === 'profile') {
@@ -240,11 +237,9 @@ useEffect(() => {
   if (!authUser) return;
   
   const userRole = authUser.role?.toLowerCase() || 'donor';
-  console.log('🔍 DonorDashboard: Checking user role:', userRole);
   
   // If user is not a donor, redirect to their correct dashboard
   if (userRole !== 'donor') {
-    console.log(`🚫 User role is ${userRole}, redirecting from DonorDashboard`);
     const redirectMap: Record<string, string> = {
       bridger: '/BridgerDashboard',
       'pulse-leader': '/PulseLeader',
@@ -259,110 +254,6 @@ useEffect(() => {
     }
   }
 }, [authUser]);
-
-  // Handle profile edit
-  const handleEditProfile = async () => {
-    if (isEditing) {
-      // Save changes
-      setIsSaving(true);
-      setSaveMessage(null);
-      
-      try {
-        const updatedProfile = await users.updateMyProfile(editForm);
-        setProfile(updatedProfile);
-        setSaveMessage({ type: 'success', text: 'Profile updated successfully!' });
-        setTimeout(() => setSaveMessage(null), 3000);
-      } catch (err: any) {
-        setSaveMessage({ type: 'error', text: err.message || 'Failed to update profile' });
-        setTimeout(() => setSaveMessage(null), 3000);
-      } finally {
-        setIsSaving(false);
-        setIsEditing(false);
-      }
-    } else {
-      setIsEditing(true);
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditing(false);
-    if (profile) {
-      setEditForm({
-        fullName: profile.fullName || "",
-        phoneNumber: profile.phoneNumber || "",
-        bloodGroup: profile.bloodGroup || "",
-        location: profile.location || "",
-      });
-    }
-  };
-
-  const handleRoleUpgrade = async (e: React.FormEvent) => {
-  e.preventDefault();
-  
-  if (!selectedRole) {
-    alert('Please select a role to upgrade to');
-    return;
-  }
-  
-  if (!reason) {
-    alert('Please provide a reason for the role upgrade request');
-    return;
-  }
-  
-  // ✅ Update role-specific validation to match uppercase values
-  if (selectedRole === 'PULSE_LEADER' && !communityName) {
-    alert('Please enter your community name');
-    return;
-  }
-  
-  if (selectedRole === 'BRIDGER' && (!facilityName || !facilityAddress)) {
-    alert('Please enter both facility name and address');
-    return;
-  }
-  
-  setIsSubmittingUpgrade(true);
-  setUpgradeMessage(null);
-  
-  try {
-    const details: any = { reason };
-    
-    if (selectedRole === 'PULSE_LEADER') {
-      details.communityName = communityName;
-    } else if (selectedRole === 'BRIDGER') {
-      details.facilityName = facilityName;
-      details.facilityAddress = facilityAddress;
-    }
-    
-    // ✅ The selectedRole is now in uppercase, matching backend expectations
-    await requestRoleUpgrade(selectedRole, details);
-    
-    setUpgradeMessage({ 
-      type: 'success', 
-      text: `Your request to become a ${selectedRole === 'PULSE_LEADER' ? 'Pulse Leader' : selectedRole === 'BRIDGER' ? 'Bridger' : 'Admin'} has been submitted successfully!` 
-    });
-    
-    // Refresh upgrade history
-    await fetchUpgradeHistory();
-    
-    // Reset form
-    setSelectedRole('');
-    setCommunityName('');
-    setFacilityName('');
-    setFacilityAddress('');
-    setReason('');
-    
-    setTimeout(() => setUpgradeMessage(null), 5000);
-    
-  } catch (error: any) {
-    console.error('Role upgrade error:', error);
-    setUpgradeMessage({ 
-      type: 'error', 
-      text: error.message || 'Failed to submit role upgrade request. Please try again.' 
-    });
-  } finally {
-    setIsSubmittingUpgrade(false);
-  }
-};
 
   const handleGoHome = () => {
     setShowSuccessModal(false);
@@ -440,22 +331,23 @@ useEffect(() => {
             />
             
             
+            <InlineMessage message={acceptMessage} onClose={() => setAcceptMessage(null)} className="mt-8" />
+
             <NearbyRequests 
               requests={nearbyRequests} 
               loading={loading}
               onAccept={async (requestId) => {
                 try {
                   // Call the accept endpoint
-                  const result = await bloodRequests.accept(requestId);
-                  if (result.success) {
-                    // Remove the request from the list or update its status
-                    setNearbyRequests(prev => prev.filter(req => req.id !== requestId));
-                    // Show success message
-                    alert('Request accepted successfully! The hospital will be notified.');
-                  }
-                } catch (error) {
+                  // Throws if the backend rejects it, so reaching the next line means it worked
+                  await bloodRequests.accept(requestId);
+                  setNearbyRequests(prev => prev.filter(req => req.id !== requestId));
+                  setAcceptMessage({ type: 'success', text: 'Request accepted successfully! The hospital will be notified.' });
+                  return true;
+                } catch (error: any) {
                   console.error('Failed to accept request:', error);
-                  alert('Failed to accept request. Please try again.');
+                  setAcceptMessage({ type: 'error', text: error?.message || 'Failed to accept request. Please try again.' });
+                  return false;
                 }
               }}
             />
@@ -550,260 +442,10 @@ useEffect(() => {
        return (
     <div className="mx-auto max-w-2xl">
       {/* Profile Information Section */}
-      <div className="bg-white rounded-lg border border-[#D8D6D6] p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Profile Information</h2>
-          {!isEditing ? (
-            <button
-              onClick={handleEditProfile}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-            >
-              <Edit2 className="w-4 h-4" />
-              Edit Profile
-            </button>
-          ) : (
-            <div className="flex gap-2">
-              <button
-                onClick={handleEditProfile}
-                disabled={isSaving}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-              >
-                <Save className="w-4 h-4" />
-                {isSaving ? 'Saving...' : 'Save'}
-              </button>
-              <button
-                onClick={handleCancelEdit}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <X className="w-4 h-4" />
-                Cancel
-              </button>
-            </div>
-          )}
-        </div>
-
-        {saveMessage && (
-          <div className={`mb-4 p-3 rounded-lg ${
-            saveMessage.type === 'success' 
-              ? 'bg-green-50 border border-green-200 text-green-700' 
-              : 'bg-red-50 border border-red-200 text-red-700'
-          }`}>
-            {saveMessage.text}
-          </div>
-        )}
-
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm font-medium text-gray-500 flex items-center gap-1">
-                <Mail className="w-4 h-4" /> Email
-              </p>
-              <p className="text-gray-900">{profile?.email || 'Loading...'}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500 flex items-center gap-1">
-                <Phone className="w-4 h-4" /> Phone
-              </p>
-              {isEditing ? (
-                <input
-                  type="tel"
-                  value={editForm.phoneNumber}
-                  onChange={(e) => setEditForm({...editForm, phoneNumber: e.target.value})}
-                  className="w-full mt-1 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                />
-              ) : (
-                <p className="text-gray-900">{profile?.phoneNumber || 'Not set'}</p>
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500 flex items-center gap-1">
-                <Droplets className="w-4 h-4" /> Blood Group
-              </p>
-              {isEditing ? (
-                <select
-                  value={editForm.bloodGroup}
-                  onChange={(e) => setEditForm({...editForm, bloodGroup: e.target.value})}
-                  className="w-full mt-1 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                >
-                  <option value="">Select blood group</option>
-                  <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
-                  <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
-                </select>
-              ) : (
-                <p className="text-gray-900">{profile?.bloodGroup || 'Not set'}</p>
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500 flex items-center gap-1">
-                <MapPin className="w-4 h-4" /> Location
-              </p>
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editForm.location}
-                  onChange={(e) => setEditForm({...editForm, location: e.target.value})}
-                  placeholder="e.g., Lagos, Nigeria"
-                  className="w-full mt-1 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                />
-              ) : (
-                <p className="text-gray-900">{profile?.location || 'Not set'}</p>
-              )}
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-gray-100">
-            <p className="text-sm font-medium text-gray-500 flex items-center gap-1">
-              <Calendar className="w-4 h-4" /> Member Since
-            </p>
-            <p className="text-gray-900">{profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : 'Loading...'}</p>
-          </div>
-        </div>
-      </div>
+      <DonorProfileForm onSaved={() => fetchDashboardData({ silent: true })} />
 
       {/* Role Upgrade Request Section */}
-      <div className="mt-6 bg-white rounded-lg border border-[#D8D6D6] p-6">
-        <div className="flex items-start gap-3 mb-4">
-          <CircleArrowUp className="w-6 h-6 text-[#1B59F8] flex-shrink-0 mt-1" />
-          <div>
-            <h3 className="text-xl font-bold text-gray-900">Upgrade Your Role</h3>
-            <p className="text-sm text-gray-500 mt-1">
-              Apply to become a Pulse Leader, Bridger, or Admin
-            </p>
-          </div>
-        </div>
-
-        {upgradeMessage && (
-          <div className={`mb-4 p-3 rounded-lg ${
-            upgradeMessage.type === 'success' 
-              ? 'bg-green-50 border border-green-200 text-green-700' 
-              : 'bg-red-50 border border-red-200 text-red-700'
-          }`}>
-            {upgradeMessage.text}
-          </div>
-        )}
-
-        <form onSubmit={handleRoleUpgrade} className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Requested Role <span className="text-red-500">*</span>
-            </label>
-            <select 
-              value={selectedRole}
-              onChange={(e) => {
-                setSelectedRole(e.target.value);
-                setCommunityName('');
-                setFacilityName('');
-                setFacilityAddress('');
-              }}
-              className="w-full bg-gray-50 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-              required
-              disabled={isSubmittingUpgrade}
-            >
-              <option value="" disabled>Select role type</option>
-              <option value="PULSE_LEADER">Pulse Leader</option>
-              <option value="BRIDGER">Bridger (Hospital Staff)</option>
-              <option value="ADMIN">Admin</option>
-            </select>
-            <p className="text-xs text-gray-500 mt-1">
-              {selectedRole === 'PULSE_LEADER' && 'Lead and manage blood donation campaigns in your community'}
-              {selectedRole === 'BRIDGER' && 'Create and manage blood requests at your hospital'}
-              {selectedRole === 'ADMIN' && 'Full platform access and user management'}
-            </p>
-          </div>
-
-          {selectedRole === 'PULSE_LEADER' && (
-            <div className="animate-in fade-in duration-200">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Community Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={communityName}
-                onChange={(e) => setCommunityName(e.target.value)}
-                placeholder="e.g., Lagos Central Community"
-                className="w-full bg-gray-50 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                required={selectedRole === 'PULSE_LEADER'}
-                disabled={isSubmittingUpgrade}
-              />
-            </div>
-          )}
-
-          {selectedRole === 'BRIDGER' && (
-            <div className="space-y-4 animate-in fade-in duration-200">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Facility Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={facilityName}
-                  onChange={(e) => setFacilityName(e.target.value)}
-                  placeholder="e.g., Lagos University Teaching Hospital"
-                  className="w-full bg-gray-50 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  required={selectedRole === 'BRIDGER'}
-                  disabled={isSubmittingUpgrade}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Facility Address <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={facilityAddress}
-                  onChange={(e) => setFacilityAddress(e.target.value)}
-                  placeholder="e.g., Idi-Araba, Lagos"
-                  className="w-full bg-gray-50 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  required={selectedRole === 'BRIDGER'}
-                  disabled={isSubmittingUpgrade}
-                />
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Reason for Request <span className="text-red-500">*</span>
-            </label>
-            <textarea 
-              rows={4}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="w-full bg-gray-50 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
-              placeholder="Please explain why you want to upgrade to this role and how you plan to contribute..."
-              required
-              disabled={isSubmittingUpgrade}
-            />
-          </div>
-
-          <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-lg">
-            <span className="text-blue-500 text-lg">🔑</span>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-blue-800">About Role Upgrades</p>
-              <p className="text-xs text-blue-700 mt-1">
-                Role upgrade requests are reviewed by administrators. You will receive a notification once your request is processed. This may take 1-3 business days.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <button 
-              type="submit"
-              disabled={isSubmittingUpgrade || !selectedRole || !reason}
-              className="px-6 py-2.5 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isSubmittingUpgrade ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                'Submit Request'
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
+      <RoleUpgradeForm onSubmitted={fetchUpgradeHistory} />
 
       {/* Upgrade History Section */}
       <div className="mt-6 bg-white rounded-lg border border-[#D8D6D6] p-6">

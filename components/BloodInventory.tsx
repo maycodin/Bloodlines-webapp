@@ -2,7 +2,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Calendar, HeartPulse, Plus, CheckCircle } from 'lucide-react';
+import { Calendar, CheckCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Cell } from 'recharts';
 import "react-datepicker/dist/react-datepicker.css";
 import DatePicker from 'react-datepicker';
@@ -20,7 +20,6 @@ export default function BloodInventoryDashboard({
   bloodRequests, 
   handleConfirm, 
   handleEdit,
-  setActivePage 
 }: BloodInventoryDashboardProps) {
   // Data for blood type fulfillment - Horizontal Bar Chart
   const bloodTypeData = [

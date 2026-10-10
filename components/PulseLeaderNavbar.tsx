@@ -1,4 +1,3 @@
-// components/PulseLeaderNavbar.tsx
 'use client';
 
 import React, { useState } from 'react';

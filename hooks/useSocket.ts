@@ -30,7 +30,6 @@ export function useSocket() {
 
     // Emergency Alert Listener
     socketInstance.on(socketEvents.emergencyAlert, (data) => {
-      console.log('🚨 Emergency Alert:', data);
       setEmergencyAlerts((prev) => [data, ...prev]);
       // Show browser notification
       if (Notification.permission === 'granted') {
@@ -43,19 +42,16 @@ export function useSocket() {
 
     // Inventory Alert Listener
     socketInstance.on(socketEvents.inventoryAlert, (data) => {
-      console.log('📦 Inventory Alert:', data);
       setInventoryAlerts((prev) => [data, ...prev]);
     });
 
     // Appointment Reminder Listener
     socketInstance.on(socketEvents.appointmentReminder, (data) => {
-      console.log('📅 Appointment Reminder:', data);
       setAppointmentReminders((prev) => [data, ...prev]);
     });
 
     // Request Status Update Listener
     socketInstance.on(socketEvents.requestStatusUpdate, (data) => {
-      console.log('🔄 Request Status Update:', data);
       setRequestStatusUpdates((prev) => [data, ...prev]);
     });
 

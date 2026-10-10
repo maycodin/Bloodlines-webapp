@@ -25,7 +25,7 @@ export default function FeedbackModal({ onClose }: FeedbackModalProps) {
   const [comment, setComment] = useState("");
 
   const handleSubmit = () => {
-    console.log({ rating, comment });
+    // TODO: send { rating, comment } to the backend (POST /donor/feedback)
     onClose();
   };
 

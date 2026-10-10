@@ -17,6 +17,7 @@ const PriorityContactForm: React.FC<PriorityContactFormProps> = ({ onAddRequest,
   const [additionalNotes, setAdditionalNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [phoneError, setPhoneError] = useState('');
+  const [formError, setFormError] = useState('');
 
   const bloodTypeOptions = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
   const unitsOptions = Array.from({ length: 8 }, (_, i) => (i + 1).toString());
@@ -88,6 +89,7 @@ const PriorityContactForm: React.FC<PriorityContactFormProps> = ({ onAddRequest,
   
   // Reset errors
   setPhoneError('');
+  setFormError('');
   
   // Validate phone number
   if (!validatePhoneNumber(phoneNumber)) {
@@ -97,7 +99,7 @@ const PriorityContactForm: React.FC<PriorityContactFormProps> = ({ onAddRequest,
   
   // Validate required fields
   if (!selectedPriority || !phoneNumber.trim() || !bloodType || !unitsNeeded) {
-    alert('Please fill in all required fields');
+    setFormError('Please fill in all required fields');
     return;
   }
   
@@ -162,6 +164,11 @@ const PriorityContactForm: React.FC<PriorityContactFormProps> = ({ onAddRequest,
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {formError && (
+        <div role="alert" className="p-3 rounded-lg text-sm bg-red-50 border border-red-200 text-red-700">
+          {formError}
+        </div>
+      )}
 
       <div className='flex items-center justify-between gap-5'>
         {/* Blood Type */}

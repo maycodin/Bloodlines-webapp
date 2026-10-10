@@ -4,14 +4,15 @@
 import { useState, useEffect } from "react";
 import { Bell, MapPin, Clock } from "lucide-react";
 import RequestAcceptedModal from "./RequestAcceptedModal";
-import { BloodRequest } from "@/lib/api";
+import { BloodRequest, bloodRequests } from "@/lib/api";
 
 type Urgency = "Critical" | "Urgent" | "Scheduled";
 
 interface NearbyRequestsProps {
   requests?: BloodRequest[];
   loading?: boolean;
-  onAccept?: (requestId: string) => void;
+  // Return false if accepting failed, so the details panel doesn't open
+  onAccept?: (requestId: string) => Promise<boolean> | boolean | void;
 }
 
 // Style maps (urgency-driven)
@@ -44,6 +45,17 @@ const urgencyLabels: Record<string, string> = {
   low: "Scheduled",
 };
 
+// The backend sends priority as CRITICAL | URGENT | SCHEDULED.
+// Convert it to the keys used by the style maps above.
+const priorityToUrgency: Record<string, string> = {
+  CRITICAL: "critical",
+  URGENT: "high",
+  HIGH: "high",
+  MEDIUM: "medium",
+  SCHEDULED: "low",
+  LOW: "low",
+};
+
 const NearbyRequests: React.FC<NearbyRequestsProps> = ({ 
   requests = [], 
   loading = false,
@@ -62,10 +74,18 @@ const NearbyRequests: React.FC<NearbyRequestsProps> = ({
 
   const visibleRequests = requests.filter((r) => !hiddenIds.includes(r.id));
 
-  const handleAccept = (request: BloodRequest) => {
-    setSelectedRequest(request);
-    if (onAccept) {
-      onAccept(request.id);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+
+  const handleAccept = async (request: BloodRequest) => {
+    if (!onAccept) {
+      setSelectedRequest(request);
+      return;
+    }
+    setAcceptingId(request.id);
+    const accepted = await onAccept(request.id);
+    setAcceptingId(null);
+    if (accepted !== false) {
+      setSelectedRequest(request);
     }
   };
 
@@ -114,7 +134,8 @@ const NearbyRequests: React.FC<NearbyRequestsProps> = ({
         ) : (
           <div className="flex flex-col gap-4">
             {visibleRequests.map((req) => {
-              const urgency = req.urgency || 'low';
+              const priority = (req.priorityLevel || req.priority || '').toUpperCase();
+              const urgency = priorityToUrgency[priority] || 'low';
               const displayUrgency = urgencyLabels[urgency] || 'Scheduled';
               
               return (
@@ -161,7 +182,7 @@ const NearbyRequests: React.FC<NearbyRequestsProps> = ({
                       }`}
                     >
                       {urgency === 'critical' && "🚨 "}
-                      {req.patientCondition || 'No additional details provided.'}
+                      {req.patientCondition || req.instructions || 'No additional details provided.'}
                     </div>
                   </div>
 
@@ -169,9 +190,10 @@ const NearbyRequests: React.FC<NearbyRequestsProps> = ({
                   <div className="flex flex-row md:flex-col gap-2 md:justify-center w-full md:w-auto">
                     <button
                       onClick={() => handleAccept(req)}
-                      className="flex-1 md:flex-none bg-[#C91E1E] hover:bg-[#A01818] text-white px-5 py-2 rounded-md text-sm transition"
+                      disabled={acceptingId !== null}
+                      className="flex-1 md:flex-none bg-[#C91E1E] hover:bg-[#A01818] text-white px-5 py-2 rounded-md text-sm transition disabled:opacity-50"
                     >
-                      Accept
+                      {acceptingId === req.id ? "Accepting..." : "Accept"}
                     </button>
 
                     <button
@@ -193,6 +215,9 @@ const NearbyRequests: React.FC<NearbyRequestsProps> = ({
         <RequestAcceptedModal
           request={selectedRequest}
           onClose={() => setSelectedRequest(null)}
+          onArrivalAlert={async (requestId) => {
+            await bloodRequests.arrivalAlert(requestId);
+          }}
         />
       )}
     </>

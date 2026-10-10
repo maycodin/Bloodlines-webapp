@@ -1,4 +1,3 @@
-// app/testimonials/page.tsx
 import React from 'react';
 import TestimonialCarousel from '@/components/TestimonialCarousel';
 

@@ -1,7 +1,7 @@
 // app/PulseLeader/page.tsx
 "use client"
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, Calendar, CircleArrowUp, Plus, Search, Home, BarChart3, User, Bell, Loader2, Edit2, Save, X, Mail, Phone, MapPin, Droplets as DropletsIcon, LogOut } from 'lucide-react';
+import { CheckCircle, Calendar, Plus, Search, Home, BarChart3, User, Bell, Loader2, Edit2, Save, X, Mail, Phone, MapPin, Droplets as DropletsIcon, LogOut } from 'lucide-react';
 import PulseLeaderNavbar from '@/components/PulseLeaderNavbar';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import DonationFulfillmentRate from '@/components/DonationFulfillment';
@@ -10,6 +10,7 @@ import Image from 'next/image';
 import ImpactActivitiesCards from '@/components/ImpactActivitiesCard';
 import DonorSearch from '@/components/DonorSearch';
 import PulseAnalytics from '@/components/PulseAnalytics';
+import RoleUpgradeForm from "@/components/RoleUpgradeForm";
 import { useAuth } from "@/app/contexts/AuthContext";
 import { users, UserProfile, pulseLeader } from '@/lib/api';
 
@@ -68,7 +69,7 @@ interface PulseLeaderDashboardData {
 }
 
 const PulseLeaderDashboard = () => {
-  const { user: authUser, requestRoleUpgrade, refreshUser, logout } = useAuth();
+  const { user: authUser, refreshUser, logout } = useAuth();
   const [activePage, setActivePage] = useState('home');
   const [bloodRequests, setBloodRequests] = useState<BloodRequestType[]>([]);
   const [isThereActiveRequest, setIsThereActiveRequest] = useState(false);
@@ -88,14 +89,6 @@ const PulseLeaderDashboard = () => {
     location: "",
   });
   
-  // Role upgrade state
-  const [selectedRole, setSelectedRole] = useState('');
-  const [communityName, setCommunityName] = useState('');
-  const [facilityName, setFacilityName] = useState('');
-  const [facilityAddress, setFacilityAddress] = useState('');
-  const [reason, setReason] = useState('');
-  const [isSubmittingUpgrade, setIsSubmittingUpgrade] = useState(false);
-  const [upgradeMessage, setUpgradeMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Fetch dashboard data
   useEffect(() => {
@@ -125,7 +118,7 @@ const PulseLeaderDashboard = () => {
           const formattedRequests = data.recentBloodRequests.map((req: any) => ({
             id: req._id || req.id,
             status: req.priorityLevel === 'CRITICAL' ? 'Critical' : 
-                    req.priorityLevel === 'URGENT' ? 'Urgent' : 'Normal',
+                    req.priorityLevel === 'URGENT' ? 'Urgent' : 'Scheduled',
             bloodType: req.bloodType,
             unitsNeeded: req.unitsNeeded,
             postedTime: new Date(req.createdAt).toLocaleString(),
@@ -148,13 +141,6 @@ const PulseLeaderDashboard = () => {
     fetchDashboardData();
   }, []);
 
-  const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedRole(e.target.value);
-    setCommunityName('');
-    setFacilityName('');
-    setFacilityAddress('');
-  };
-  
   // Handle profile edit
   const handleEditProfile = async () => {
     if (isEditing) {
@@ -162,8 +148,10 @@ const PulseLeaderDashboard = () => {
       setSaveMessage(null);
       
       try {
-        const updatedProfile = await users.updateMyProfile(editForm);
-        setProfile(updatedProfile);
+        await users.updateMyProfile(editForm);
+        // Reload the saved profile rather than trusting the update response's shape
+        const savedProfile = await users.getMyProfile();
+        setProfile(savedProfile);
         setSaveMessage({ type: 'success', text: 'Profile updated successfully!' });
         setTimeout(() => setSaveMessage(null), 3000);
       } catch (err: any) {
@@ -190,70 +178,7 @@ const PulseLeaderDashboard = () => {
     }
   };
 
-  // Role upgrade handler
-  const handleRoleUpgrade = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!selectedRole) {
-      alert('Please select a role to upgrade to');
-      return;
-    }
-    
-    if (!reason) {
-      alert('Please provide a reason for the role upgrade request');
-      return;
-    }
-    
-    if (selectedRole === 'pulse-leader' && !communityName) {
-      alert('Please enter your community name');
-      return;
-    }
-    
-    if (selectedRole === 'bridger' && (!facilityName || !facilityAddress)) {
-      alert('Please enter both facility name and address');
-      return;
-    }
-    
-    setIsSubmittingUpgrade(true);
-    setUpgradeMessage(null);
-    
-    try {
-      const details: any = { reason };
-      
-      if (selectedRole === 'pulse-leader') {
-        details.communityName = communityName;
-      } else if (selectedRole === 'bridger') {
-        details.facilityName = facilityName;
-        details.facilityAddress = facilityAddress;
-      }
-      
-      await requestRoleUpgrade(selectedRole, details);
-      
-      setUpgradeMessage({ 
-        type: 'success', 
-        text: `Your request to become a ${selectedRole === 'pulse-leader' ? 'Pulse Leader' : selectedRole === 'bridger' ? 'Bridger' : 'Admin'} has been submitted successfully!` 
-      });
-      
-      setSelectedRole('');
-      setCommunityName('');
-      setFacilityName('');
-      setFacilityAddress('');
-      setReason('');
-      
-      setTimeout(() => setUpgradeMessage(null), 5000);
-      
-    } catch (error: any) {
-      setUpgradeMessage({ 
-        type: 'error', 
-        text: error.message || 'Failed to submit role upgrade request. Please try again.' 
-      });
-    } finally {
-      setIsSubmittingUpgrade(false);
-    }
-  };
-
   const handleConfirm = (id: string | number) => {
-    console.log('Confirm donation for request:', id);
     setBloodRequests(prev => prev.filter(request => request.id !== id));
     if (bloodRequests.length <= 1) {
       setIsThereActiveRequest(false);
@@ -261,7 +186,7 @@ const PulseLeaderDashboard = () => {
   };
 
   const handleEdit = (id: string | number) => {
-    console.log('Edit request:', id);
+    // TODO: open the edit form for this request
   };
 
   const handlePageChange = (page: string) => {
@@ -627,136 +552,7 @@ const PulseLeaderDashboard = () => {
             </div>
 
             {/* Role Upgrade Request Section */}
-            <div className="mt-6 bg-white rounded-lg border border-[#D8D6D6] p-6">
-              <div className="flex items-start gap-3 mb-4">
-                <CircleArrowUp className="w-6 h-6 text-[#1B59F8] flex-shrink-0 mt-1" />
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">Upgrade Your Role</h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Apply to become a Pulse Leader, Bridger, or Admin
-                  </p>
-                </div>
-              </div>
-
-              {upgradeMessage && (
-                <div className={`mb-4 p-3 rounded-lg ${
-                  upgradeMessage.type === 'success' 
-                    ? 'bg-green-50 border border-green-200 text-green-700' 
-                    : 'bg-red-50 border border-red-200 text-red-700'
-                }`}>
-                  {upgradeMessage.text}
-                </div>
-              )}
-
-              <form onSubmit={handleRoleUpgrade} className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Requested Role <span className="text-[#C91E1E]">*</span>
-                  </label>
-                  <select 
-                    value={selectedRole}
-                    onChange={handleRoleChange}
-                    className="w-full bg-[#F4F2F2] p-3 border border-[#D8D6D6] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C91E1E] focus:border-transparent text-gray-700"
-                    required
-                    disabled={isSubmittingUpgrade}
-                  >
-                    <option value="" disabled>Select role type</option>
-                    <option value="pulse-leader">Pulse Leader</option>
-                    <option value="bridger">Bridger (Hospital Staff)</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
-
-                {selectedRole === 'pulse-leader' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Community Name <span className="text-[#C91E1E]">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={communityName}
-                      onChange={(e) => setCommunityName(e.target.value)}
-                      placeholder="Enter your community's name"
-                      className="w-full bg-[#F4F2F2] p-3 border border-[#D8D6D6] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C91E1E] focus:border-transparent text-gray-700 placeholder-gray-400"
-                      required={selectedRole === 'pulse-leader'}
-                      disabled={isSubmittingUpgrade}
-                    />
-                  </div>
-                )}
-
-                {selectedRole === 'bridger' && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Facility Name <span className="text-[#C91E1E]">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={facilityName}
-                        onChange={(e) => setFacilityName(e.target.value)}
-                        placeholder="Enter Hospital/clinic name"
-                        className="w-full bg-[#F4F2F2] p-3 border border-[#D8D6D6] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C91E1E] focus:border-transparent text-gray-700 placeholder-gray-400"
-                        required={selectedRole === 'bridger'}
-                        disabled={isSubmittingUpgrade}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Facility Address <span className="text-[#C91E1E]">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={facilityAddress}
-                        onChange={(e) => setFacilityAddress(e.target.value)}
-                        placeholder="Enter facility address"
-                        className="w-full bg-[#F4F2F2] p-3 border border-[#D8D6D6] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C91E1E] focus:border-transparent text-gray-700 placeholder-gray-400"
-                        required={selectedRole === 'bridger'}
-                        disabled={isSubmittingUpgrade}
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Reason for Request <span className="text-[#C91E1E]">*</span>
-                  </label>
-                  <textarea 
-                    rows={5}
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    className="w-full p-3 bg-[#F4F2F2] border border-[#D8D6D6] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C91E1E] focus:border-transparent text-gray-700 placeholder-gray-400 resize-none"
-                    placeholder="Please explain why you want to upgrade to this role and how you plan to contribute..."
-                    required
-                    disabled={isSubmittingUpgrade}
-                  />
-                </div>
-
-                <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-lg">
-                  <span className="text-blue-500 text-lg">🔑</span>
-                  <p className="text-sm text-blue-700">
-                    Role upgrade requests are reviewed by administrators. You will receive a notification once your request is processed. This may take 1-3 business days.
-                  </p>
-                </div>
-
-                <div className="flex justify-end">
-                  <button 
-                    type="submit"
-                    disabled={isSubmittingUpgrade || !selectedRole || !reason}
-                    className="px-8 py-3 bg-[#C91E1E] text-white font-semibold rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {isSubmittingUpgrade ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Submitting...
-                      </>
-                    ) : (
-                      'Submit Request'
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
+            <RoleUpgradeForm />
 
             <div className="mt-4 bg-white rounded-lg border border-[#D8D6D6] p-5">
               <div className="font-bold">Notification Preferences</div>

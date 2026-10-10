@@ -4,11 +4,12 @@
 import { useState } from "react";
 import { X, MapPin, Clock, Phone, Navigation } from "lucide-react";
 import { BloodRequest } from "@/lib/api";
+import InlineMessage, { Message } from "@/components/InlineMessage";
 
 interface RequestAcceptedModalProps {
   request: BloodRequest;
   onClose: () => void;
-  onArrivalAlert?: (requestId: string) => void;
+  onArrivalAlert?: (requestId: string) => Promise<void> | void;
 }
 
 const RequestAcceptedModal: React.FC<RequestAcceptedModalProps> = ({ 
@@ -17,17 +18,24 @@ const RequestAcceptedModal: React.FC<RequestAcceptedModalProps> = ({
   onArrivalAlert 
 }) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [arrivalMessage, setArrivalMessage] = useState<Message | null>(null);
   
+  const [hasArrived, setHasArrived] = useState(false);
+
   const handleArrivalAlert = async () => {
+    if (!onArrivalAlert) return;
     setIsLoading(true);
+    setArrivalMessage(null);
     try {
-      if (onArrivalAlert) {
-        await onArrivalAlert(request.id);
-      }
-      alert('Arrival alert sent! The hospital has been notified.');
+      await onArrivalAlert(request.id);
+      setHasArrived(true);
+      setArrivalMessage({
+        type: 'success',
+        text: "The hospital has been told you've arrived. Once they confirm your donation, it will appear in your donation history.",
+      });
     } catch (error) {
       console.error('Failed to send arrival alert:', error);
-      alert('Failed to send arrival alert. Please call the hospital directly.');
+      setArrivalMessage({ type: 'error', text: 'Failed to send arrival alert. Please call the hospital directly.' });
     } finally {
       setIsLoading(false);
     }
@@ -90,7 +98,7 @@ const RequestAcceptedModal: React.FC<RequestAcceptedModalProps> = ({
             <h3 className="font-semibold text-gray-900">Hospital Details</h3>
             <div className="space-y-2 text-sm">
               <p className="font-medium text-gray-800">{request.facilityName || request.hospitalName}</p>
-              <p className="text-gray-600">{request.facilityAddress}</p>
+              <p className="text-gray-600">{request.facilityAddress || request.address}</p>
               <div className="flex items-center gap-2 text-gray-600">
                 <Phone className="w-4 h-4" />
                 <span>{request.contactPhone}</span>
@@ -102,7 +110,7 @@ const RequestAcceptedModal: React.FC<RequestAcceptedModalProps> = ({
           <div className="space-y-2">
             <h3 className="font-semibold text-gray-900">Patient Condition</h3>
             <p className="text-sm text-gray-700 p-3 bg-blue-50 rounded-lg border border-blue-100">
-              {request.patientCondition}
+              {request.patientCondition || request.instructions || 'No additional details provided.'}
             </p>
             {request.additionalNotes && (
               <p className="text-sm text-gray-600 mt-2">
@@ -117,20 +125,23 @@ const RequestAcceptedModal: React.FC<RequestAcceptedModalProps> = ({
               <Clock className="w-4 h-4" />
               <span>Posted: {new Date(request.createdAt).toLocaleDateString()}</span>
             </div>
-            <div className="flex items-center gap-1">
-              <span>Required by: {new Date(request.requiredByDate).toLocaleDateString()}</span>
-            </div>
+            {request.requiredByDate && (
+              <div className="flex items-center gap-1">
+                <span>Required by: {new Date(request.requiredByDate).toLocaleDateString()}</span>
+              </div>
+            )}
           </div>
           
           {/* Action Buttons */}
           <div className="space-y-3 pt-4 border-t border-gray-200">
+            <InlineMessage message={arrivalMessage} className="mb-0" />
             <button
               onClick={handleArrivalAlert}
-              disabled={isLoading}
+              disabled={isLoading || hasArrived || !onArrivalAlert}
               className="w-full py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
             >
               <Navigation className="w-5 h-5" />
-              {isLoading ? 'Sending...' : "I've Arrived at Hospital"}
+              {isLoading ? 'Sending...' : hasArrived ? 'Arrival sent' : "I've Arrived at Hospital"}
             </button>
             
             <button

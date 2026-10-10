@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { 
-  CheckCircle, Plus, Users, Calendar, HeartPulse, CircleArrowUp,
+  CheckCircle, Plus, Users, Calendar, HeartPulse,
   Droplets, History, AlertTriangle, Phone, MapPin, Clock, Trophy, Loader2, LogOut
 } from "lucide-react";
 import BridgerNavbar from "@/components/BridgerNavbar";
@@ -12,21 +12,12 @@ import CriticalBloodRequestCard, { BloodRequestType } from "@/components/Critica
 import PriorityContactForm from "@/components/PriorityContactForm";
 import SuccessModal from "@/components/SuccessModal";
 import BloodInventoryDashboard from "@/components/BloodInventory";
-import { bloodRequests, analytics, donor, UserProfile } from "@/lib/api";
+import InlineMessage, { Message } from "@/components/InlineMessage";
+import RoleUpgradeForm from "@/components/RoleUpgradeForm";
+import { bloodRequests, bridger, users, UserProfile } from "@/lib/api";
 import { useAuth } from "@/app/contexts/AuthContext";
 
 type Page = "home" | "blood-requests" | "analytics" | "profile";
-
-// Donor Match Type
-interface DonorMatch {
-  id: string;
-  fullName: string;
-  bloodType: string;
-  distance: number;
-  phoneNumber?: string;
-  email?: string;
-  lastDonationDate?: string;
-}
 
 // Bridger Dashboard Data Type
 interface BridgerDashboardData {
@@ -55,7 +46,7 @@ interface BridgerDashboardData {
 }
 
 const Dashboard = () => {
-  const { user: authUser, requestRoleUpgrade, refreshUser, logout } = useAuth();
+  const { user: authUser, refreshUser, logout } = useAuth();
   
   // State - renamed to avoid conflict with imported bloodRequests
   const [localBloodRequests, setLocalBloodRequests] = useState<BloodRequestType[]>([]);
@@ -66,14 +57,6 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Profile form state
-  const [selectedRole, setSelectedRole] = useState('');
-  const [communityName, setCommunityName] = useState('');
-  const [facilityName, setFacilityName] = useState('');
-  const [facilityAddress, setFacilityAddress] = useState('');
-  const [reason, setReason] = useState('');
-  const [isSubmittingUpgrade, setIsSubmittingUpgrade] = useState(false);
-  const [upgradeMessage, setUpgradeMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   
   // API state
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -83,14 +66,15 @@ const Dashboard = () => {
   const [requestData, setRequestData] = useState({
     bloodType: '',
     unitsNeeded: '',
-    urgency: '',
+    priorityLevel: '',
+    contactPhone: '',
+    facilityName: '',
+    facilityAddress: '',
     patientCondition: '',
     requiredByDate: '',
-    hospitalId: '',
   });
-  const [matches, setMatches] = useState<DonorMatch[]>([]);
-  const [showMatches, setShowMatches] = useState(false);
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [requestMessage, setRequestMessage] = useState<Message | null>(null);
+  const [emergencyMessage, setEmergencyMessage] = useState<Message | null>(null);
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [emergencyData, setEmergencyData] = useState({
     bloodType: '',
@@ -105,6 +89,47 @@ const Dashboard = () => {
     { type: 'AB+', units: 3, status: 'critical', color: '#C91E1E' },
   ];
 
+  // Turn the backend's request objects into the shape the request cards use
+  const formatRequests = (requests: any[]): BloodRequestType[] =>
+    requests.map((req) => ({
+      id: req._id || req.id,
+      status: req.priorityLevel === 'CRITICAL' ? 'Critical' : req.priorityLevel === 'URGENT' ? 'Urgent' : 'Scheduled',
+      bloodType: req.bloodType,
+      unitsNeeded: req.unitsNeeded,
+      postedTime: new Date(req.createdAt).toLocaleTimeString(),
+      contactNumber: req.contactPhone || 'Not provided',
+      patientCondition: req.patientCondition || 'No details provided',
+      showActions: true,
+    }));
+
+  const loadMyRequests = async () => {
+    const myRequests = await bloodRequests.getMyRequests();
+    const formatted = formatRequests(myRequests);
+    setLocalBloodRequests(formatted);
+    setIsThereActiveRequest(formatted.length > 0);
+  };
+
+  // Ask the browser for the bridger's location; the backend needs it to match nearby donors
+  const getCurrentCoordinates = () =>
+    new Promise<[number, number]>((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('Your browser does not support location access, which is needed to post a request.'));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => resolve([position.coords.longitude, position.coords.latitude]),
+        (geoError) =>
+          reject(
+            new Error(
+              geoError.code === geoError.PERMISSION_DENIED
+                ? 'Location access is needed so nearby donors can be matched. Please allow it in your browser and try again.'
+                : 'Could not get your location. Please try again.'
+            )
+          ),
+        { enableHighAccuracy: true, timeout: 15000 }
+      );
+    });
+
   // Fetch dashboard data
   useEffect(() => {
     const fetchBridgerData = async () => {
@@ -113,30 +138,15 @@ const Dashboard = () => {
       
       try {
         // Fetch user profile
-        const profileData = await donor.getProfile().catch(() => null);
+        const profileData = await users.getMyProfile().catch(() => null);
         if (profileData) setProfile(profileData);
         
         // Fetch bridger dashboard data
-        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-        const response = await fetch('https://bloodlines-core.onrender.com/bridger/dashboard', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch dashboard data');
-        }
-        
-        const data = await response.json();
+        const data = await bridger.getDashboard();
         setDashboardData(data);
         
-        // Fetch bridger analytics if profile ID exists
-        if (profileData?.id) {
-          const statsData = await analytics.getBridgerAnalytics(profileData.id);
-          // Merge with dashboard data
-        }
+        // Load this bridger's existing requests (a failure here shouldn't hide the dashboard)
+        await loadMyRequests().catch((err) => console.error('Failed to load blood requests:', err));
         
       } catch (err: any) {
         console.error("Failed to fetch bridger data:", err);
@@ -173,7 +183,6 @@ const Dashboard = () => {
   };
 
   const handleConfirm = (id: string | number) => {
-    console.log('Confirm donation for request:', id);
     setLocalBloodRequests(prev => prev.filter(request => request.id !== id));
     if (localBloodRequests.length <= 1) {
       setIsThereActiveRequest(false);
@@ -181,7 +190,7 @@ const Dashboard = () => {
   };
 
   const handleEdit = (id: string | number) => {
-    console.log('Edit request:', id);
+    // TODO: open the edit form for this request
   };
 
   const handleAddRequest = (newRequest: BloodRequestType) => {
@@ -210,67 +219,53 @@ const Dashboard = () => {
   const handleCreateRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setRequestMessage(null);
     
-    if (!requestData.bloodType || !requestData.unitsNeeded || !requestData.urgency || 
+    if (!requestData.bloodType || !requestData.unitsNeeded || !requestData.priorityLevel || 
+        !requestData.contactPhone || !requestData.facilityName || !requestData.facilityAddress ||
         !requestData.patientCondition || !requestData.requiredByDate) {
-      alert('Please fill in all required fields');
+      setRequestMessage({ type: 'error', text: 'Please fill in all required fields' });
       setIsLoading(false);
       return;
     }
     
     try {
-      const newRequest = await bloodRequests.create({
+      const coordinates = await getCurrentCoordinates();
+
+      await bloodRequests.create({
         bloodType: requestData.bloodType,
         unitsNeeded: parseInt(requestData.unitsNeeded),
-        urgency: requestData.urgency,
-        hospitalId: profile?.id || 'temp-hospital-id',
+        priorityLevel: requestData.priorityLevel as 'CRITICAL' | 'URGENT' | 'SCHEDULED',
+        contactPhone: requestData.contactPhone,
+        facilityName: requestData.facilityName,
+        facilityAddress: requestData.facilityAddress,
+        facilityLocation: { type: 'Point', coordinates },
         patientCondition: requestData.patientCondition,
-        requiredByDate: requestData.requiredByDate,
+        // The date picker gives local time without a zone; the API expects a full date-time
+        requiredByDate: new Date(requestData.requiredByDate).toISOString(),
       });
       
-      console.log('Request created:', newRequest);
-      alert('Blood request created successfully!');
-      setSelectedRequestId(newRequest.id);
-      
-      // Get donor matches
-      try {
-        const matchesData = await bloodRequests.getMatches(newRequest.id);
-        setMatches(matchesData.donors || []);
-        setShowMatches(true);
-      } catch (matchError) {
-        console.error('Error fetching matches:', matchError);
-      }
+      setRequestMessage({ type: 'success', text: 'Blood request created successfully!' });
       
       // Reset form
       setRequestData({
         bloodType: '',
         unitsNeeded: '',
-        urgency: '',
+        priorityLevel: '',
+        contactPhone: '',
+        // Keep the facility details: a bridger usually posts from the same hospital
+        facilityName: requestData.facilityName,
+        facilityAddress: requestData.facilityAddress,
         patientCondition: '',
         requiredByDate: '',
-        hospitalId: '',
       });
       
       // Refresh the requests list
-      const updatedRequests = await bloodRequests.getMyRequests();
-      if (updatedRequests?.data) {
-        const formattedRequests = updatedRequests.data.map((req: any) => ({
-          id: req.id,
-          status: req.urgency === 'critical' ? 'Critical' : req.urgency === 'high' ? 'Urgent' : 'Normal',
-          bloodType: req.bloodType,
-          unitsNeeded: req.unitsNeeded,
-          postedTime: new Date(req.createdAt).toLocaleTimeString(),
-          contactNumber: profile?.phoneNumber || 'Not provided',
-          patientCondition: req.patientCondition,
-          showActions: true
-        }));
-        setLocalBloodRequests(formattedRequests);
-        setIsThereActiveRequest(true);
-      }
+      await loadMyRequests().catch((err) => console.error('Failed to refresh blood requests:', err));
       
     } catch (error: any) {
       console.error('Failed to create request:', error);
-      alert(error.message || 'Failed to create blood request. Please try again.');
+      setRequestMessage({ type: 'error', text: error.message || 'Failed to create blood request. Please try again.' });
     } finally {
       setIsLoading(false);
     }
@@ -279,96 +274,30 @@ const Dashboard = () => {
   // Emergency Broadcast
   const handleEmergencyBroadcast = async () => {
     if (!emergencyData.requestId || !emergencyData.bloodType) {
-      alert('Please select a request for emergency broadcast');
+      setEmergencyMessage({ type: 'error', text: 'Please select a request for emergency broadcast' });
       return;
     }
     
     setIsLoading(true);
+    setEmergencyMessage(null);
     try {
-      const result = await bloodRequests.emergencyBroadcast({
-        requestId: emergencyData.requestId,
-        bloodType: emergencyData.bloodType,
+      const result = await bridger.sendEmergencyAlert({
+        targetBloodGroups: [emergencyData.bloodType],
         message: emergencyData.message || 'Emergency: Patient in critical condition',
       });
-      alert(`🚨 Emergency alert sent to ${result.recipientCount} donors!`);
+      setEmergencyMessage({
+        type: 'success',
+        text: typeof result?.recipientCount === 'number'
+          ? `Emergency alert sent to ${result.recipientCount} donors!`
+          : 'Emergency alert sent to eligible donors.',
+      });
       setShowEmergencyModal(false);
       setEmergencyData({ bloodType: '', message: '', requestId: '' });
     } catch (error) {
       console.error('Failed to send emergency alert:', error);
-      alert('Failed to send emergency alert. Please try again.');
+      setEmergencyMessage({ type: 'error', text: 'Failed to send emergency alert. Please try again.' });
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // Role Change Handler
-  const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedRole(e.target.value);
-    setCommunityName('');
-    setFacilityName('');
-    setFacilityAddress('');
-  };
-
-  // Role Upgrade Handler using Auth Context
-  const handleRoleUpgrade = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!selectedRole) {
-      alert('Please select a role to upgrade to');
-      return;
-    }
-    
-    if (!reason) {
-      alert('Please provide a reason for the role upgrade request');
-      return;
-    }
-    
-    if (selectedRole === 'pulse-leader' && !communityName) {
-      alert('Please enter your community name');
-      return;
-    }
-    
-    if (selectedRole === 'bridger' && (!facilityName || !facilityAddress)) {
-      alert('Please enter both facility name and address');
-      return;
-    }
-    
-    setIsSubmittingUpgrade(true);
-    setUpgradeMessage(null);
-    
-    try {
-      const details: any = { reason };
-      
-      if (selectedRole === 'pulse-leader') {
-        details.communityName = communityName;
-      } else if (selectedRole === 'bridger') {
-        details.facilityName = facilityName;
-        details.facilityAddress = facilityAddress;
-      }
-      
-      await requestRoleUpgrade(selectedRole, details);
-      
-      setUpgradeMessage({ 
-        type: 'success', 
-        text: `Your request to become a ${selectedRole === 'pulse-leader' ? 'Pulse Leader' : selectedRole === 'bridger' ? 'Bridger' : 'Admin'} has been submitted successfully! You will be notified once reviewed.` 
-      });
-      
-      setSelectedRole('');
-      setCommunityName('');
-      setFacilityName('');
-      setFacilityAddress('');
-      setReason('');
-      
-      setTimeout(() => setUpgradeMessage(null), 5000);
-      
-    } catch (error: any) {
-      console.error('Role upgrade error:', error);
-      setUpgradeMessage({ 
-        type: 'error', 
-        text: error.message || 'Failed to submit role upgrade request. Please try again.' 
-      });
-    } finally {
-      setIsSubmittingUpgrade(false);
     }
   };
 
@@ -537,6 +466,7 @@ const Dashboard = () => {
             {/* Create Request Form */}
             <div className="bg-white rounded-xl p-6 border border-[#C91E1E] w-full mx-auto">
               <h2 className="text-xl font-bold text-gray-800 mb-6">Create Blood Request</h2>
+              <InlineMessage message={requestMessage} onClose={() => setRequestMessage(null)} />
               <form onSubmit={handleCreateRequest} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -553,13 +483,24 @@ const Dashboard = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Urgency *</label>
-                    <select className="w-full p-3 border border-gray-300 rounded-lg" value={requestData.urgency} onChange={(e) => setRequestData({...requestData, urgency: e.target.value})} required>
+                    <select className="w-full p-3 border border-gray-300 rounded-lg" value={requestData.priorityLevel} onChange={(e) => setRequestData({...requestData, priorityLevel: e.target.value})} required>
                       <option value="">Select urgency</option>
-                      <option value="critical">🔴 Critical</option>
-                      <option value="high">🟠 High</option>
-                      <option value="medium">🟡 Medium</option>
-                      <option value="low">🟢 Low</option>
+                      <option value="CRITICAL">🔴 Critical</option>
+                      <option value="URGENT">🟠 Urgent</option>
+                      <option value="SCHEDULED">🟢 Scheduled</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Contact Phone *</label>
+                    <input type="tel" className="w-full p-3 border border-gray-300 rounded-lg" value={requestData.contactPhone} onChange={(e) => setRequestData({...requestData, contactPhone: e.target.value})} placeholder="+2348012345678" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Facility Name *</label>
+                    <input type="text" className="w-full p-3 border border-gray-300 rounded-lg" value={requestData.facilityName} onChange={(e) => setRequestData({...requestData, facilityName: e.target.value})} placeholder="e.g., Lagos University Teaching Hospital" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Facility Address *</label>
+                    <input type="text" className="w-full p-3 border border-gray-300 rounded-lg" value={requestData.facilityAddress} onChange={(e) => setRequestData({...requestData, facilityAddress: e.target.value})} placeholder="e.g., Idi-Araba, Lagos" required />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Required By Date *</label>
@@ -573,37 +514,11 @@ const Dashboard = () => {
                 <button type="submit" disabled={isLoading} className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50">
                   {isLoading ? "Creating..." : "Create Blood Request"}
                 </button>
+                <p className="text-xs text-gray-500 text-center">
+                  Your browser will ask to share your location, so donors near your facility can be matched.
+                </p>
               </form>
             </div>
-
-            {/* Donor Matches Section */}
-            {showMatches && matches.length > 0 && (
-              <div className="bg-white rounded-xl p-6 border border-green-500 w-full mx-auto">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-bold text-green-700">✅ Compatible Donors Found!</h2>
-                  <button onClick={() => setShowMatches(false)} className="text-gray-500 hover:text-gray-700">✕</button>
-                </div>
-                <p className="text-sm text-gray-600 mb-4">{matches.length} donor{matches.length !== 1 ? 's' : ''} matched by blood type and proximity</p>
-                <div className="space-y-3">
-                  {matches.map((donor) => (
-                    <div key={donor.id} className="flex justify-between items-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100">
-                      <div>
-                        <p className="font-semibold">{donor.fullName}</p>
-                        <div className="flex gap-3 text-sm text-gray-600 mt-1">
-                          <span className="flex items-center gap-1"><Droplets className="w-3 h-3" /> {donor.bloodType}</span>
-                          <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {donor.distance}km away</span>
-                          {donor.lastDonationDate && <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Last: {donor.lastDonationDate}</span>}
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        {donor.phoneNumber && <button className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 flex items-center gap-1"><Phone className="w-3 h-3" /> Contact</button>}
-                        <button className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">Notify</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Emergency Broadcast Section */}
             <div className="bg-white rounded-xl p-6 border border-red-500 w-full mx-auto">
@@ -612,6 +527,7 @@ const Dashboard = () => {
                 <h2 className="text-xl font-bold text-red-600">Emergency Broadcast</h2>
               </div>
               <p className="text-sm text-gray-600 mb-4">Send urgent alerts to nearby eligible donors. Use only for genuine critical emergencies.</p>
+              <InlineMessage message={emergencyMessage} onClose={() => setEmergencyMessage(null)} />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Select Blood Request</label>
@@ -661,7 +577,7 @@ const Dashboard = () => {
       case 'analytics':
         return (
           <div className="flex items-center justify-center">
-            <BloodInventoryDashboard bloodRequests={localBloodRequests} handleConfirm={handleConfirm} handleEdit={handleEdit} setActivePage={setActivePage} /> 
+            <BloodInventoryDashboard bloodRequests={localBloodRequests} handleConfirm={handleConfirm} handleEdit={handleEdit} setActivePage={handlePageChange} /> 
           </div>
         );
       
@@ -707,145 +623,7 @@ const Dashboard = () => {
             </div>
 
             {/* Role Upgrade Request Section */}
-            <div className="mt-6 bg-white rounded-lg border border-[#D8D6D6] p-6">
-              <div className="flex items-start gap-3 mb-4">
-                <CircleArrowUp className="w-6 h-6 text-[#1B59F8] flex-shrink-0 mt-1" />
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">Upgrade Your Role</h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Apply to become a Pulse Leader, Bridger, or Admin
-                  </p>
-                </div>
-              </div>
-
-              {upgradeMessage && (
-                <div className={`mb-4 p-3 rounded-lg ${
-                  upgradeMessage.type === 'success' 
-                    ? 'bg-green-50 border border-green-200 text-green-700' 
-                    : 'bg-red-50 border border-red-200 text-red-700'
-                }`}>
-                  {upgradeMessage.text}
-                </div>
-              )}
-
-              <form onSubmit={handleRoleUpgrade} className="space-y-5">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Requested Role <span className="text-red-500">*</span>
-                  </label>
-                  <select 
-                    value={selectedRole}
-                    onChange={handleRoleChange}
-                    className="w-full bg-gray-50 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                    required
-                    disabled={isSubmittingUpgrade}
-                  >
-                    <option value="" disabled>Select role type</option>
-                    <option value="pulse-leader">Pulse Leader</option>
-                    <option value="bridger">Bridger (Hospital Staff)</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {selectedRole === 'pulse-leader' && 'Lead and manage blood donation campaigns in your community'}
-                    {selectedRole === 'bridger' && 'Create and manage blood requests at your hospital'}
-                    {selectedRole === 'admin' && 'Full platform access and user management'}
-                  </p>
-                </div>
-
-                {selectedRole === 'pulse-leader' && (
-                  <div className="animate-in fade-in duration-200">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Community Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={communityName}
-                      onChange={(e) => setCommunityName(e.target.value)}
-                      placeholder="e.g., Lagos Central Community"
-                      className="w-full bg-gray-50 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                      required={selectedRole === 'pulse-leader'}
-                      disabled={isSubmittingUpgrade}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">The community you will be leading</p>
-                  </div>
-                )}
-
-                {selectedRole === 'bridger' && (
-                  <div className="space-y-4 animate-in fade-in duration-200">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Facility Name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={facilityName}
-                        onChange={(e) => setFacilityName(e.target.value)}
-                        placeholder="e.g., Lagos University Teaching Hospital"
-                        className="w-full bg-gray-50 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                        required={selectedRole === 'bridger'}
-                        disabled={isSubmittingUpgrade}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Facility Address <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={facilityAddress}
-                        onChange={(e) => setFacilityAddress(e.target.value)}
-                        placeholder="e.g., Idi-Araba, Lagos"
-                        className="w-full bg-gray-50 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                        required={selectedRole === 'bridger'}
-                        disabled={isSubmittingUpgrade}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Reason for Request <span className="text-red-500">*</span>
-                  </label>
-                  <textarea 
-                    rows={4}
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    className="w-full bg-gray-50 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
-                    placeholder="Please explain why you want to upgrade to this role and how you plan to contribute..."
-                    required
-                    disabled={isSubmittingUpgrade}
-                  />
-                </div>
-
-                <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-lg">
-                  <span className="text-blue-500 text-lg">🔑</span>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-blue-800">About Role Upgrades</p>
-                    <p className="text-xs text-blue-700 mt-1">
-                      Role upgrade requests are reviewed by administrators. You will receive a notification once your request is processed. This may take 1-3 business days.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <button 
-                    type="submit"
-                    disabled={isSubmittingUpgrade || !selectedRole || !reason}
-                    className="px-6 py-2.5 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {isSubmittingUpgrade ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Submitting...
-                      </>
-                    ) : (
-                      'Submit Request'
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
+            <RoleUpgradeForm />
           </div>
         );
       

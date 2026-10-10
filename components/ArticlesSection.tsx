@@ -1,4 +1,3 @@
-// app/resources/page.tsx
 import React from 'react';
 import ResourceCard from '@/components/ResourceCard';
 

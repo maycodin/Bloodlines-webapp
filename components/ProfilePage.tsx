@@ -30,7 +30,6 @@ const ProfilePage = () => {
 
   const handleConfigure = (id: string) => {
     // Placeholder — wire to notification settings flow
-    console.log("Configure:", id);
   };
 
   return (
@@ -40,7 +39,7 @@ const ProfilePage = () => {
         email={PROFILE_DATA.email}
         phone={PROFILE_DATA.phone}
         hospitalName={PROFILE_DATA.hospitalName}
-        onEditProfile={() => console.log("Edit profile")}
+        onEditProfile={() => {}}
       />
 
       <UpgradeRole onSubmitSuccess={handleRoleSubmitSuccess} />
