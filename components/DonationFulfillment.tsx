@@ -1,8 +1,14 @@
 import React from 'react';
 import { TrendingUp, Calendar } from 'lucide-react';
 
-const CurvedProgressFulfillment = () => {
-  const percentage = 87;
+type DonationFulfillmentProps = {
+  // From /bridger/dashboard -> requestOverview
+  percentage?: number;
+  totalRequests?: number;
+  fulfilledRequests?: number;
+};
+
+const CurvedProgressFulfillment = ({ percentage = 0, totalRequests = 0, fulfilledRequests = 0 }: DonationFulfillmentProps) => {
   const radius = 60;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (percentage / 100) * circumference;
@@ -76,7 +82,7 @@ const CurvedProgressFulfillment = () => {
 
           {/* Percentage in center */}
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <div className="text-4xl font-bold text-gray-900">{percentage}%</div>
+            <div className="text-4xl font-bold text-gray-900">{Math.round(percentage)}%</div>
             
           </div>
         </div>
@@ -84,8 +90,8 @@ const CurvedProgressFulfillment = () => {
         {/* Stats below */}
         <div className="text-center">
           <p className="text-black text-sm">
-            <span className="font-normal text-black">120 requests</span> •{' '}
-            <span className="font-normal text-black">108 fulfilled</span>
+            <span className="font-normal text-black">{totalRequests} request{totalRequests !== 1 ? 's' : ''}</span> •{' '}
+            <span className="font-normal text-black">{fulfilledRequests} fulfilled</span>
           </p>
         </div>
       </div>

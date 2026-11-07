@@ -129,6 +129,10 @@ export default function SignupPage() {
       const result = await auth.signup(signupData);
       
       if (result.success) {
+        // Remember the email for this browser tab, so the next pages can resend the link and prefill login
+        try {
+          sessionStorage.setItem("pendingVerificationEmail", formData.email);
+        } catch {}
         setSuccess(
           "Account created successfully! Please check your email to verify your account before logging in."
         );
