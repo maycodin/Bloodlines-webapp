@@ -49,6 +49,7 @@ const RoleUpgradeForm = ({
 
   const [selectedRole, setSelectedRole] = useState<RoleValue | "">("");
   const [communityName, setCommunityName] = useState("");
+  const [communityLocation, setCommunityLocation] = useState("");
   const [facilityName, setFacilityName] = useState("");
   const [facilityAddress, setFacilityAddress] = useState("");
   const [reason, setReason] = useState("");
@@ -58,6 +59,7 @@ const RoleUpgradeForm = ({
   const resetForm = () => {
     setSelectedRole("");
     setCommunityName("");
+    setCommunityLocation("");
     setFacilityName("");
     setFacilityAddress("");
     setReason("");
@@ -74,8 +76,8 @@ const RoleUpgradeForm = ({
       setMessage({ type: "error", text: "Please provide a reason for the role upgrade request" });
       return;
     }
-    if (selectedRole === "PULSE_LEADER" && !communityName.trim()) {
-      setMessage({ type: "error", text: "Please enter your community name" });
+    if (selectedRole === "PULSE_LEADER" && (!communityName.trim() || !communityLocation.trim())) {
+      setMessage({ type: "error", text: "Please enter your community name and location" });
       return;
     }
     if (selectedRole === "BRIDGER" && (!facilityName.trim() || !facilityAddress.trim())) {
@@ -89,8 +91,10 @@ const RoleUpgradeForm = ({
     try {
       const details: Record<string, string> = { reason };
       if (selectedRole === "PULSE_LEADER") {
-        // The backend has no community field yet, so it travels with the reason for the reviewer
-        details.reason = `${reason}\n\nCommunity: ${communityName}`;
+        // The backend requires facilityName and facilityAddress for every upgrade request.
+        // For a Pulse Leader, these carry the community they will lead.
+        details.facilityName = communityName.trim();
+        details.facilityAddress = communityLocation.trim();
       } else if (selectedRole === "BRIDGER") {
         details.facilityName = facilityName;
         details.facilityAddress = facilityAddress;
@@ -142,6 +146,7 @@ const RoleUpgradeForm = ({
             onChange={(e) => {
               setSelectedRole(e.target.value as RoleValue | "");
               setCommunityName("");
+              setCommunityLocation("");
               setFacilityName("");
               setFacilityAddress("");
             }}
@@ -174,6 +179,20 @@ const RoleUpgradeForm = ({
               disabled={isSubmitting}
             />
             <p className="text-xs text-gray-500 mt-1">The community you will be leading</p>
+
+            <label htmlFor="community-location" className="block text-sm font-medium text-gray-700 mb-1 mt-4">
+              Community Location <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="community-location"
+              type="text"
+              value={communityLocation}
+              onChange={(e) => setCommunityLocation(e.target.value)}
+              placeholder="e.g., Surulere, Lagos"
+              className={inputClass}
+              required
+              disabled={isSubmitting}
+            />
           </div>
         )}
 

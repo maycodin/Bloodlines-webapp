@@ -178,17 +178,6 @@ const PulseLeaderDashboard = () => {
     }
   };
 
-  const handleConfirm = (id: string | number) => {
-    setBloodRequests(prev => prev.filter(request => request.id !== id));
-    if (bloodRequests.length <= 1) {
-      setIsThereActiveRequest(false);
-    }
-  };
-
-  const handleEdit = (id: string | number) => {
-    // TODO: open the edit form for this request
-  };
-
   const handlePageChange = (page: string) => {
     setActivePage(page);
   };
@@ -376,12 +365,11 @@ const PulseLeaderDashboard = () => {
               
               {bloodRequests.length > 0 ? (
                 <div className="space-y-4">
+                  {/* View only: just the Bridger who posted a request can edit or confirm it */}
                   {bloodRequests.slice(0, 5).map((request) => (
                     <CriticalBloodRequestCard
                       key={request.id}
                       request={request}
-                      onConfirm={handleConfirm}
-                      onEdit={handleEdit}
                     />
                   ))}
                 </div>

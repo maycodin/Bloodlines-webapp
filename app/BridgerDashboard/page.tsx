@@ -14,6 +14,8 @@ import SuccessModal from "@/components/SuccessModal";
 import BloodInventoryDashboard from "@/components/BloodInventory";
 import InlineMessage, { Message } from "@/components/InlineMessage";
 import RoleUpgradeForm from "@/components/RoleUpgradeForm";
+import EditBloodRequestModal from "@/components/EditBloodRequestModal";
+import ConfirmDonationModal from "@/components/ConfirmDonationModal";
 import { bloodRequests, bridger, users, UserProfile } from "@/lib/api";
 import { useAuth } from "@/app/contexts/AuthContext";
 
@@ -42,6 +44,9 @@ interface BridgerDashboardData {
   };
   fulfillmentHistory: any[];
   fulfillmentByBloodType: any[];
+  // Monthly breakdowns (12 entries, Jan to Dec)
+  monthlyActiveRequests?: { month: string; monthIndex: number; activeRequests: number; totalRequests: number }[];
+  monthlyAverageResponseTime?: { month: string; monthIndex: number; averageMinutes: number; formattedDuration: string; totalFulfilled: number }[];
   fulfillmentByPriority: any[];
 }
 
@@ -61,6 +66,17 @@ const Dashboard = () => {
   // API state
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Edit / Confirm donation panels for a request, and a message shown above the page
+  const [editingRequest, setEditingRequest] = useState<BloodRequestType | null>(null);
+  const [confirmingRequest, setConfirmingRequest] = useState<BloodRequestType | null>(null);
+  const [pageMessage, setPageMessage] = useState<Message | null>(null);
+
+  // Profile editing (PUT /users/me)
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileMessage, setProfileMessage] = useState<Message | null>(null);
+  const [profileForm, setProfileForm] = useState({ fullName: '', phoneNumber: '', bloodGroup: '', location: '' });
   
   // Bridger-specific state
   const [requestData, setRequestData] = useState({
@@ -82,12 +98,25 @@ const Dashboard = () => {
     requestId: ''
   });
 
-  // Mock data for inventory (will be replaced with real data)
-  const bloodInventory = [
-    { type: 'O+', units: 45, status: 'good', color: '#1C7C3A' },
-    { type: 'O-', units: 8, status: 'low', color: '#413D3D' },
-    { type: 'AB+', units: 3, status: 'critical', color: '#C91E1E' },
-  ];
+  // Blood inventory from /bridger/dashboard (inventorySummary). Empty until the backend records inventory.
+  const bloodInventory = (dashboardData?.inventorySummary || []).map((item: any) => {
+    const units = Number(item.units ?? item.totalUnits ?? item.quantity ?? item.count ?? 0);
+    return {
+      type: item.bloodType || item.bloodGroup || item.type || item._id || '?',
+      units,
+      status: item.status || (units <= 5 ? 'critical' : units <= 15 ? 'low' : 'good'),
+    };
+  });
+
+  // Monthly fulfillment rate: fulfilled requests (from the response-time breakdown) / total requests that month
+  const monthlyFulfillment = (dashboardData?.monthlyActiveRequests || []).map((m) => {
+    const fulfilled = dashboardData?.monthlyAverageResponseTime?.find((r) => r.monthIndex === m.monthIndex)?.totalFulfilled ?? 0;
+    return {
+      month: m.month.slice(0, 3),
+      value: m.totalRequests ? Math.round((fulfilled / m.totalRequests) * 100) : 0,
+      detail: `${fulfilled} of ${m.totalRequests} fulfilled`,
+    };
+  });
 
   // Turn the backend's request objects into the shape the request cards use
   const formatRequests = (requests: any[]): BloodRequestType[] =>
@@ -100,6 +129,13 @@ const Dashboard = () => {
       contactNumber: req.contactPhone || 'Not provided',
       patientCondition: req.patientCondition || 'No details provided',
       showActions: true,
+      priorityLevel: req.priorityLevel,
+      requestStatus: req.status,
+      facilityName: req.facilityName,
+      facilityAddress: req.facilityAddress,
+      additionalNotes: req.additionalNotes,
+      assignedDonors: Array.isArray(req.assignedDonors) ? req.assignedDonors : [],
+      unitsConfirmed: req.unitsConfirmed,
     }));
 
   const loadMyRequests = async () => {
@@ -182,15 +218,45 @@ const Dashboard = () => {
     }
   };
 
+  // "Confirm donation" opens the list of donors who accepted this request
   const handleConfirm = (id: string | number) => {
-    setLocalBloodRequests(prev => prev.filter(request => request.id !== id));
-    if (localBloodRequests.length <= 1) {
-      setIsThereActiveRequest(false);
-    }
+    setConfirmingRequest(localBloodRequests.find((request) => request.id === id) || null);
   };
 
+  // "Edit" opens the edit panel for this request
   const handleEdit = (id: string | number) => {
-    // TODO: open the edit form for this request
+    setEditingRequest(localBloodRequests.find((request) => request.id === id) || null);
+  };
+
+  const refreshRequests = () =>
+    loadMyRequests().catch((err) => console.error('Failed to refresh blood requests:', err));
+
+  const startEditingProfile = () => {
+    setProfileForm({
+      fullName: profile?.fullName || '',
+      phoneNumber: profile?.phoneNumber || '',
+      bloodGroup: profile?.bloodGroup || '',
+      location: profile?.location || '',
+    });
+    setProfileMessage(null);
+    setIsEditingProfile(true);
+  };
+
+  const handleSaveProfile = async () => {
+    setIsSavingProfile(true);
+    setProfileMessage(null);
+    try {
+      await users.updateMyProfile(profileForm);
+      // Reload the saved profile rather than trusting the update response's shape
+      const saved = await users.getMyProfile();
+      setProfile(saved);
+      setIsEditingProfile(false);
+      setProfileMessage({ type: 'success', text: 'Profile updated successfully!' });
+    } catch (err: any) {
+      setProfileMessage({ type: 'error', text: err?.message || 'Failed to update profile. Please try again.' });
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const handleAddRequest = (newRequest: BloodRequestType) => {
@@ -376,7 +442,11 @@ const Dashboard = () => {
                   </div>
                 </div>
 
-                <DonationFulfillmentRate />
+                <DonationFulfillmentRate
+                  percentage={dashboardData?.requestOverview?.overallFulfillmentRate || 0}
+                  totalRequests={dashboardData?.requestOverview?.totalRequests || 0}
+                  fulfilledRequests={dashboardData?.requestOverview?.fulfilledRequests || 0}
+                />
                 
                 <div className="bg-white rounded-lg p-5 shadow-md border border-[#D8D6D6] w-96">
                   <div className="flex items-center justify-between mb-3">
@@ -390,22 +460,13 @@ const Dashboard = () => {
                       <span>100</span><span>50</span><span>0</span>
                     </div>
                     <div className="ml-10 h-full flex items-end justify-between">
-                      {[
-                        { month: 'Jan', value: dashboardData?.requestOverview?.overallFulfillmentRate || 0 },
-                        { month: 'Feb', value: 0 },
-                        { month: 'Mar', value: 0 },
-                        { month: 'Apr', value: 0 },
-                        { month: 'May', value: 0 },
-                        { month: 'Jun', value: 0 },
-                        { month: 'Jul', value: 0 },
-                        { month: 'Aug', value: 0 },
-                        { month: 'Sep', value: 0 },
-                        { month: 'Oct', value: 0 },
-                        { month: 'Nov', value: 0 },
-                        { month: 'Dec', value: 0 },
-                      ].map((item, index) => (
-                        <div key={index} className="flex flex-col items-center">
-                          <div className="w-2 bg-[#1C7C3A] rounded-lg" style={{ height: `${Math.min(item.value * 0.6, 100)}px` }} />
+                      {monthlyFulfillment.length === 0 && (
+                        <p className="text-sm text-gray-500 self-center mx-auto">No monthly data yet</p>
+                      )}
+                      {monthlyFulfillment.map((item, index) => (
+                        <div key={index} className="flex flex-col items-center" title={`${item.month}: ${item.value}% (${item.detail})`}>
+                          {/* 100% = 185px tall, matching the 0-100 scale on the left */}
+                          <div className="w-2 bg-[#1C7C3A] rounded-lg" style={{ height: `${Math.max(item.value * 1.85, item.value > 0 ? 4 : 0)}px` }} />
                           <span className="text-xs text-gray-600 mt-2">{item.month}</span>
                         </div>
                       ))}
@@ -416,6 +477,9 @@ const Dashboard = () => {
 
               <div className="bg-white rounded-xl p-6 shadow-md border border-[#D8D6D6] mb-8">
                 <h2 className="text-xl font-bold text-black mb-3">Current Blood Inventory</h2>
+                {bloodInventory.length === 0 && (
+                  <p className="text-sm text-gray-500">No inventory recorded yet. Stock levels will show here once the facility's inventory is added.</p>
+                )}
                 <div className="flex flex-wrap gap-4">
                   {bloodInventory.map((item, index) => (
                     <div key={index} className="flex flex-col items-center justify-center p-6 w-36 border border-[#D8D6D6] rounded-lg">
@@ -587,11 +651,16 @@ const Dashboard = () => {
             {/* Profile Information Section */}
             <div className="bg-white rounded-lg border border-[#D8D6D6] p-6">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Profile Information</h2>
+              <InlineMessage message={profileMessage} onClose={() => setProfileMessage(null)} />
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm font-medium text-gray-500">Full Name</p>
-                    <p className="text-gray-900">{profile?.fullName || 'Loading...'}</p>
+                    {isEditingProfile ? (
+                      <input type="text" value={profileForm.fullName} onChange={(e) => setProfileForm({ ...profileForm, fullName: e.target.value })} className="w-full mt-1 p-2 border border-gray-300 rounded-lg" />
+                    ) : (
+                      <p className="text-gray-900">{profile?.fullName || 'Loading...'}</p>
+                    )}
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500">Email</p>
@@ -599,11 +668,30 @@ const Dashboard = () => {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500">Phone</p>
-                    <p className="text-gray-900">{profile?.phoneNumber || 'Loading...'}</p>
+                    {isEditingProfile ? (
+                      <input type="tel" value={profileForm.phoneNumber} onChange={(e) => setProfileForm({ ...profileForm, phoneNumber: e.target.value })} className="w-full mt-1 p-2 border border-gray-300 rounded-lg" />
+                    ) : (
+                      <p className="text-gray-900">{profile?.phoneNumber || 'Not set'}</p>
+                    )}
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500">Blood Group</p>
-                    <p className="text-gray-900">{profile?.bloodGroup || 'Not set'}</p>
+                    {isEditingProfile ? (
+                      <select value={profileForm.bloodGroup} onChange={(e) => setProfileForm({ ...profileForm, bloodGroup: e.target.value })} className="w-full mt-1 p-2 border border-gray-300 rounded-lg">
+                        <option value="">Select</option>
+                        {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((group) => <option key={group} value={group}>{group}</option>)}
+                      </select>
+                    ) : (
+                      <p className="text-gray-900">{profile?.bloodGroup || 'Not set'}</p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Location</p>
+                    {isEditingProfile ? (
+                      <input type="text" value={profileForm.location} onChange={(e) => setProfileForm({ ...profileForm, location: e.target.value })} placeholder="e.g., Surulere, Lagos" className="w-full mt-1 p-2 border border-gray-300 rounded-lg" />
+                    ) : (
+                      <p className="text-gray-900">{profile?.location || 'Not set'}</p>
+                    )}
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500">Role</p>
@@ -616,9 +704,20 @@ const Dashboard = () => {
                     <p className="text-gray-900">{profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : 'Loading...'}</p>
                   </div>
                 </div>
-                <button className="mt-4 bg-gray-100 text-gray-700 font-medium px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors">
-                  Edit Profile
-                </button>
+                {isEditingProfile ? (
+                  <div className="mt-4 flex gap-2">
+                    <button onClick={handleSaveProfile} disabled={isSavingProfile} className="bg-green-600 text-white font-medium px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
+                      {isSavingProfile ? 'Saving...' : 'Save'}
+                    </button>
+                    <button onClick={() => setIsEditingProfile(false)} disabled={isSavingProfile} className="border border-gray-300 text-gray-700 font-medium px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={startEditingProfile} className="mt-4 bg-gray-100 text-gray-700 font-medium px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors">
+                    Edit Profile
+                  </button>
+                )}
               </div>
             </div>
 
@@ -639,8 +738,32 @@ const Dashboard = () => {
         activePage={activePage}
         onLogout={handleLogout}
       />
-      <div className='m-8'>{renderPageContent()}</div>
+      <div className='m-8'>
+        <InlineMessage message={pageMessage} onClose={() => setPageMessage(null)} />
+        {renderPageContent()}
+      </div>
       <SuccessModal isOpen={showSuccessModal} onClose={handleCloseModal} onGoHome={handleGoHome} />
+      {editingRequest && (
+        <EditBloodRequestModal
+          request={editingRequest}
+          onClose={() => setEditingRequest(null)}
+          onSaved={(text) => {
+            setEditingRequest(null);
+            setPageMessage({ type: 'success', text });
+            refreshRequests();
+          }}
+        />
+      )}
+      {confirmingRequest && (
+        <ConfirmDonationModal
+          request={confirmingRequest}
+          onClose={() => setConfirmingRequest(null)}
+          onChanged={(text) => {
+            if (text) setPageMessage({ type: 'success', text });
+            refreshRequests();
+          }}
+        />
+      )}
     </>
   );
 };

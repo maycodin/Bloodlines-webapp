@@ -5,7 +5,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { API_URL } from "@/lib/api";
+import { API_URL, auth } from "@/lib/api";
 import { CheckCircle, XCircle, Loader2 } from "lucide-react";
 
 function VerifyEmailContent() {
@@ -14,6 +14,28 @@ function VerifyEmailContent() {
   const token = searchParams.get("token");
   const [status, setStatus] = useState<"verifying" | "success" | "error">("verifying");
   const [message, setMessage] = useState("Verifying your email...");
+  const [resendEmail, setResendEmail] = useState("");
+  const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [isResending, setIsResending] = useState(false);
+
+  // The email address saved at signup (kept in this browser tab only), so resending needs no typing
+  useEffect(() => {
+    try {
+      setResendEmail(sessionStorage.getItem("pendingVerificationEmail") || "");
+    } catch {}
+  }, []);
+
+  const handleResend = async () => {
+    if (!resendEmail.trim()) {
+      setResendStatus("Enter the email address you signed up with.");
+      return;
+    }
+    setIsResending(true);
+    setResendStatus(null);
+    const result = await auth.resendVerification(resendEmail.trim());
+    setIsResending(false);
+    setResendStatus(result.success ? "A new verification link has been sent. Please check your inbox." : result.error || "Could not resend the email. Please try again.");
+  };
 
   useEffect(() => {
     if (!token) {
@@ -37,9 +59,9 @@ function VerifyEmailContent() {
           setStatus("success");
           setMessage(result.message || "Email verified successfully! You can now log in.");
           
-          // Redirect to login after 3 seconds
+          // Redirect to login after 3 seconds; the login page then shows "email verified"
           setTimeout(() => {
-            router.push("/login");
+            router.push("/RegisterPage/Login?verified=1");
           }, 3000);
         } else {
           setStatus("error");
@@ -103,7 +125,7 @@ function VerifyEmailContent() {
             {status === "success" && (
               <div className="space-y-3">
                 <button
-                  onClick={() => router.push("/login")}
+                  onClick={() => router.push("/RegisterPage/Login?verified=1")}
                   className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors"
                 >
                   Go to Login
@@ -114,17 +136,26 @@ function VerifyEmailContent() {
             {status === "error" && (
               <div className="space-y-3">
                 <Link
-                  href="/login"
+                  href="/RegisterPage/Login"
                   className="block w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors text-center"
                 >
                   Back to Login
                 </Link>
+                <input
+                  type="email"
+                  value={resendEmail}
+                  onChange={(e) => setResendEmail(e.target.value)}
+                  placeholder="Your email address"
+                  className="w-full p-3 bg-gray-100 rounded-lg outline-none text-left"
+                />
                 <button
-                  onClick={() => {/* Handle resend verification */}}
-                  className="w-full py-3 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+                  onClick={handleResend}
+                  disabled={isResending}
+                  className="w-full py-3 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
                 >
-                  Resend Verification Email
+                  {isResending ? "Sending..." : "Resend Verification Email"}
                 </button>
+                {resendStatus && <p className="text-sm text-gray-600">{resendStatus}</p>}
               </div>
             )}
 

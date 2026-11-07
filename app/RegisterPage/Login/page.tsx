@@ -13,7 +13,9 @@ export default function LoginPage() {
   const { login, isLoading: authLoading, isAuthenticated, user } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [remember, setRemember] = useState(false);
+  // On by default, so closing the browser doesn't log people out
+  const [remember, setRemember] = useState(true);
+  const [justVerified, setJustVerified] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -36,6 +38,17 @@ export default function LoginPage() {
       }
     }
   }, [authLoading, isAuthenticated, user, router]);
+
+  // Coming from signup or email verification: prefill the email and say the account is verified
+  useEffect(() => {
+    try {
+      const savedEmail = sessionStorage.getItem("pendingVerificationEmail");
+      if (savedEmail) setEmail(savedEmail);
+    } catch {}
+    if (new URLSearchParams(window.location.search).get("verified") === "1") {
+      setJustVerified(true);
+    }
+  }, []);
 
   const validate = () => {
     const err: typeof errors = {};
@@ -61,6 +74,9 @@ export default function LoginPage() {
 
   try {
     await login(email, password, remember);
+    try {
+      sessionStorage.removeItem("pendingVerificationEmail");
+    } catch {}
     // Redirect is handled in the auth context after successful login
   } catch (error: any) {
     // Check if error is about email verification
@@ -120,6 +136,12 @@ export default function LoginPage() {
             <p className="text-gray-600 mb-8">
               Please provide your details to log into your account
             </p>
+
+            {justVerified && !serverError && (
+              <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+                Your email is verified. Log in to continue.
+              </div>
+            )}
 
             {/* Server Error Message */}
             {serverError && (

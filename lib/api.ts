@@ -125,6 +125,14 @@ export interface UserProfile {
   updatedAt: string;
 }
 
+// A donor who accepted a blood request (AssignedDonorInfo in the API docs)
+export interface AssignedDonor {
+  _id: string;
+  fullName: string;
+  bloodGroup: string;
+  phoneNumber?: string;
+}
+
 export interface BloodRequest {
   id: string;
   _id?: string; // MongoDB id, returned by the /blood-requests endpoints
@@ -146,6 +154,10 @@ export interface BloodRequest {
   status: 'PENDING' | 'ACCEPTED' | 'FULFILLED' | 'CANCELLED';
   hospitalId: string;
   hospitalName?: string;
+  // Donors who accepted this request. The docs describe objects (AssignedDonorInfo),
+  // but the live backend currently returns plain donor ids, so handle both.
+  assignedDonors?: (AssignedDonor | string)[];
+  unitsConfirmed?: number;
   // Field names used by the donor endpoints (DonationRequest in the API docs)
   address?: string;
   instructions?: string;
@@ -521,6 +533,11 @@ export const bridger = {
     return authFetch('/bridger/dashboard');
   },
 
+  // GET /bridger/donors - Available donors near the facility: { data: [{ id, name, bloodGroup, location, donationCount }] }
+  getDonors: async (limit = 100): Promise<{ id: string; name: string; bloodGroup?: string; location?: string }[]> => {
+    return toList(await authFetch(`/bridger/donors?limit=${limit}`));
+  },
+
   // POST /bridger/emergency-alert - Alert eligible donors of the given blood groups
   sendEmergencyAlert: async (data: {
     targetBloodGroups: string[];
@@ -532,10 +549,19 @@ export const bridger = {
     });
   },
 
-  // POST /bridger/fulfill-request/{requestId} - Mark a request as fulfilled
-  fulfillRequest: async (requestId: string): Promise<any> => {
+  // POST /bridger/confirm-donation/{requestId}/{donorId} - Confirm one donor's donation for a request
+  confirmDonation: async (requestId: string, donorId: string, referralCode?: string): Promise<any> => {
+    return authFetch(`/bridger/confirm-donation/${requestId}/${donorId}`, {
+      method: 'POST',
+      body: JSON.stringify(referralCode ? { referralCode } : {}),
+    });
+  },
+
+  // POST /bridger/fulfill-request/{requestId} - Mark a request as fully fulfilled
+  fulfillRequest: async (requestId: string, note?: string): Promise<any> => {
     return authFetch(`/bridger/fulfill-request/${requestId}`, {
       method: 'POST',
+      body: JSON.stringify(note ? { note } : {}),
     });
   },
 };
@@ -667,12 +693,13 @@ export const bloodRequests = {
   },
 
   // POST /blood-requests/{requestId}/update - Update an existing request (bridger)
+  // Fields match UpdateBloodRequestDto in the live API docs; all are optional
   update: async (id: string, data: {
-    priorityLevel?: 'CRITICAL' | 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
+    priorityLevel?: 'CRITICAL' | 'URGENT' | 'SCHEDULED';
     unitsNeeded?: number;
     contactPhone?: string;
     additionalNotes?: string;
-    status?: 'PENDING' | 'ACCEPTED' | 'FULFILLED' | 'CANCELLED';
+    status?: 'PENDING' | 'ACCEPTED' | 'CONFIRMED' | 'FULFILLED' | 'CANCELLED' | 'IN_PROGRESS' | 'EXPIRED' | 'COMPLETED_PENDING_REVIEW';
     facilityName?: string;
     facilityAddress?: string;
     facilityLocation?: {

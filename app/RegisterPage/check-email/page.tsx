@@ -1,13 +1,37 @@
 // app/check-email/page.tsx
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { auth } from "@/lib/api";
 import Image from "next/image";
 import Link from "next/link";
 import { Mail, ArrowLeft } from "lucide-react";
 
 export default function CheckEmailPage() {
   const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [isResending, setIsResending] = useState(false);
+
+  // The email address saved at signup (kept in this browser tab only)
+  useEffect(() => {
+    try {
+      setEmail(sessionStorage.getItem("pendingVerificationEmail") || "");
+    } catch {}
+  }, []);
+
+  const handleResend = async () => {
+    if (!email) {
+      setResendStatus("We couldn't find your email address here. Please log in and use the resend option there.");
+      return;
+    }
+    setIsResending(true);
+    setResendStatus(null);
+    const result = await auth.resendVerification(email);
+    setIsResending(false);
+    setResendStatus(result.success ? `A new verification link has been sent to ${email}.` : result.error || "Could not resend the email. Please try again.");
+  };
 
   return (
     <main className="min-h-screen">
@@ -39,7 +63,7 @@ export default function CheckEmailPage() {
 
             {/* Message */}
             <p className="text-gray-600 mb-4">
-              We've sent a verification link to your email address.
+              We've sent a verification link to {email ? <strong>{email}</strong> : "your email address"}.
             </p>
             <p className="text-sm text-gray-500 mb-8">
               Please click the link in the email to verify your account. 
@@ -78,12 +102,14 @@ export default function CheckEmailPage() {
             <p className="text-xs text-gray-500 mt-6">
               Didn't receive the email?{" "}
               <button 
-                onClick={() => {/* Handle resend */}}
-                className="text-red-600 hover:underline"
+                onClick={handleResend}
+                disabled={isResending}
+                className="text-red-600 hover:underline disabled:opacity-50"
               >
-                Click here to resend
+                {isResending ? "Sending..." : "Click here to resend"}
               </button>
             </p>
+            {resendStatus && <p className="text-xs text-gray-600 mt-2">{resendStatus}</p>}
           </div>
         </div>
       </section>
