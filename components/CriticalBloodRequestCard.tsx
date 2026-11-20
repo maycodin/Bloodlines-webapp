@@ -26,6 +26,7 @@ export type BloodRequestType = {
   additionalNotes?: string;
   assignedDonors?: (AssignedDonor | string)[]; // live backend sends donor ids
   unitsConfirmed?: number;
+  facilityCoordinates?: [number, number]; // [longitude, latitude]
 };
 
 const STATUS_LABELS: Record<string, string> = {

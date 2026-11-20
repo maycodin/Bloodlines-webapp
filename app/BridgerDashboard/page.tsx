@@ -18,7 +18,7 @@ import EditBloodRequestModal from "@/components/EditBloodRequestModal";
 import ConfirmDonationModal from "@/components/ConfirmDonationModal";
 import { bloodRequests, bridger, users, UserProfile } from "@/lib/api";
 import { useAuth } from "@/app/contexts/AuthContext";
-import { toRequestCard, isClosedRequest } from "@/lib/requests";
+import { toRequestCard, isClosedRequest, geocodeAddress } from "@/lib/requests";
 
 type Page = "home" | "blood-requests" | "analytics" | "profile";
 
@@ -92,6 +92,9 @@ const Dashboard = () => {
     requiredByDate: '',
   });
   const [requestMessage, setRequestMessage] = useState<Message | null>(null);
+  // Optional: the Bridger can share their current location instead of relying on the address
+  const [sharedCoordinates, setSharedCoordinates] = useState<[number, number] | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
   const [emergencyMessage, setEmergencyMessage] = useState<Message | null>(null);
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [emergencyData, setEmergencyData] = useState({
@@ -131,11 +134,11 @@ const Dashboard = () => {
     setIsThereActiveRequest(formatted.length > 0);
   };
 
-  // Ask the browser for the bridger's location; the backend needs it to match nearby donors
+  // Ask the browser for the Bridger's current location (optional, used only when they choose it)
   const getCurrentCoordinates = () =>
     new Promise<[number, number]>((resolve, reject) => {
       if (!navigator.geolocation) {
-        reject(new Error('Your browser does not support location access, which is needed to post a request.'));
+        reject(new Error('Your browser does not support location access.'));
         return;
       }
       navigator.geolocation.getCurrentPosition(
@@ -144,13 +147,40 @@ const Dashboard = () => {
           reject(
             new Error(
               geoError.code === geoError.PERMISSION_DENIED
-                ? 'Location access is needed so nearby donors can be matched. Please allow it in your browser and try again.'
-                : 'Could not get your location. Please try again.'
+                ? 'Location access was blocked. You can still post: the facility address will be used instead.'
+                : 'Could not get your location. You can still post: the facility address will be used instead.'
             )
           ),
         { enableHighAccuracy: true, timeout: 15000 }
       );
     });
+
+  const handleUseMyLocation = async () => {
+    setIsLocating(true);
+    setRequestMessage(null);
+    try {
+      setSharedCoordinates(await getCurrentCoordinates());
+    } catch (err: any) {
+      setRequestMessage({ type: 'error', text: err.message });
+    } finally {
+      setIsLocating(false);
+    }
+  };
+
+  // Work out where the facility is, so the backend can match donors near it.
+  // 1. The location the Bridger chose to share, 2. the saved location of an earlier request
+  // for the same facility, 3. the facility address looked up on the map.
+  const resolveFacilityCoordinates = async (): Promise<[number, number] | null> => {
+    if (sharedCoordinates) return sharedCoordinates;
+    const sameFacility = localBloodRequests.find(
+      (r) =>
+        r.facilityCoordinates &&
+        r.facilityName?.trim().toLowerCase() === requestData.facilityName.trim().toLowerCase() &&
+        r.facilityAddress?.trim().toLowerCase() === requestData.facilityAddress.trim().toLowerCase()
+    );
+    if (sameFacility?.facilityCoordinates) return sameFacility.facilityCoordinates;
+    return geocodeAddress(requestData.facilityAddress, requestData.facilityName);
+  };
 
   // Fetch dashboard data
   useEffect(() => {
@@ -290,7 +320,14 @@ const Dashboard = () => {
     }
     
     try {
-      const coordinates = await getCurrentCoordinates();
+      const coordinates = await resolveFacilityCoordinates();
+      if (!coordinates) {
+        setRequestMessage({
+          type: 'error',
+          text: "We couldn't find that facility address on the map. Please add more detail (street, area, city), or use \"Use my current location\" if you're at the facility.",
+        });
+        return;
+      }
 
       await bloodRequests.create({
         bloodType: requestData.bloodType,
@@ -313,7 +350,7 @@ const Dashboard = () => {
         unitsNeeded: '',
         priorityLevel: '',
         contactPhone: '',
-        // Keep the facility details: a bridger usually posts from the same hospital
+        // Keep the facility details (and any shared location): a Bridger usually posts from the same hospital
         facilityName: requestData.facilityName,
         facilityAddress: requestData.facilityAddress,
         patientCondition: '',
@@ -572,9 +609,22 @@ const Dashboard = () => {
                 <button type="submit" disabled={isLoading} className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50">
                   {isLoading ? "Creating..." : "Create Blood Request"}
                 </button>
-                <p className="text-xs text-gray-500 text-center">
-                  Your browser will ask to share your location, so donors near your facility can be matched.
-                </p>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-gray-500">
+                  <span className="flex-1">
+                    {sharedCoordinates
+                      ? 'Using your current location to match nearby donors.'
+                      : 'Nearby donors are matched using the facility address. If you are at the facility, you can share your current location instead.'}
+                  </span>
+                  {sharedCoordinates ? (
+                    <button type="button" onClick={() => setSharedCoordinates(null)} className="text-[#C91E1E] font-medium underline">
+                      Use the address instead
+                    </button>
+                  ) : (
+                    <button type="button" onClick={handleUseMyLocation} disabled={isLocating} className="flex items-center gap-1 text-[#C91E1E] font-medium underline disabled:opacity-50">
+                      <MapPin className="w-3 h-3" /> {isLocating ? 'Getting location...' : 'Use my current location'}
+                    </button>
+                  )}
+                </div>
               </form>
             </div>
 
