@@ -43,14 +43,36 @@ export const CLOSED_REQUEST_STATUSES = ['FULFILLED', 'CANCELLED', 'EXPIRED'];
 export const isClosedRequest = (request: BloodRequestType): boolean =>
   !!request.requestStatus && CLOSED_REQUEST_STATUSES.includes(request.requestStatus);
 
+// Address versions to look up, from most to least precise. Street numbers and some street names
+// aren't on the map for many Nigerian addresses, so later tries drop the first part of the
+// address until only the area and city are left (close enough to match nearby donors), and
+// finally try the city or town on its own.
+// "12 Admiralty Way, Lekki Phase 1, Lagos" -> "Admiralty Way, Lekki Phase 1, Lagos" -> "Lekki Phase 1, Lagos"
+export const addressSearchQueries = (address: string, facilityName?: string): string[] => {
+  const parts = address.split(',').map((part) => part.trim()).filter(Boolean);
+  const queries: string[] = [];
+  const add = (query: string) => {
+    const clean = query.trim();
+    if (clean && !queries.includes(clean)) queries.push(clean);
+  };
+  add(parts.join(', '));
+  if (parts.length > 0) add([parts[0].replace(/^(no\.?\s*)?\d+[a-z]?\s*,?\s*/i, ''), ...parts.slice(1)].join(', '));
+  for (let i = 1; parts.length - i >= 2; i++) add(parts.slice(i).join(', '));
+  if (facilityName && parts.length > 0) add(`${facilityName}, ${parts[parts.length - 1]}`);
+  // Last resort: the city or town alone
+  if (parts.length > 1) add(parts[parts.length - 1]);
+  return queries.slice(0, 5);
+};
+
 // Find map coordinates [longitude, latitude] for a facility address using OpenStreetMap's
-// free geocoder (Nominatim). Tries the full address, then the address with the facility name.
-// Returns null if nothing is found or the service can't be reached.
+// free geocoder (Nominatim), trying the versions above one at a time (its limit is one
+// lookup per second). Returns null if nothing is found or the service can't be reached.
 export const geocodeAddress = async (address: string, facilityName?: string): Promise<[number, number] | null> => {
-  const queries = [address, facilityName ? `${facilityName}, ${address}` : ''].filter(Boolean);
-  for (const query of queries) {
+  const queries = addressSearchQueries(address, facilityName);
+  for (let i = 0; i < queries.length; i++) {
+    if (i > 0) await new Promise((resolve) => setTimeout(resolve, 1000));
     try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ng&q=${encodeURIComponent(query)}`;
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ng&q=${encodeURIComponent(queries[i])}`;
       const response = await fetch(url, { headers: { Accept: 'application/json' } });
       if (!response.ok) continue;
       const results = await response.json();
@@ -60,7 +82,7 @@ export const geocodeAddress = async (address: string, facilityName?: string): Pr
         if (!isNaN(lon) && !isNaN(lat)) return [lon, lat];
       }
     } catch {
-      // Network or service error: try the next query, then give up
+      // Network or service error: try the next version
     }
   }
   return null;
