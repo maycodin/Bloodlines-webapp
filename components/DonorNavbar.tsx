@@ -14,6 +14,7 @@ import {
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/contexts/AuthContext";
+import RoleSwitcher from "@/components/RoleSwitcher";
 
 interface DonorNavbarProps {
   onPageChange?: (page: string) => void;
@@ -181,6 +182,8 @@ const DonorNavbar: React.FC<DonorNavbarProps> = ({
                       Settings
                     </button>
 
+                    <RoleSwitcher />
+
                     <div className="border-t border-gray-100 mt-2 pt-2">
                       <button
                         onClick={handleSignOut}
@@ -248,6 +251,8 @@ const DonorNavbar: React.FC<DonorNavbarProps> = ({
                 <Settings className="w-4 h-4" />
                 Settings
               </button>
+
+              <RoleSwitcher variant="mobile" />
 
               <button
                 onClick={handleSignOut}

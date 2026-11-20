@@ -14,6 +14,8 @@ interface AuthContextType {
   logout: () => void;
   refreshUser: () => Promise<void>;
   requestRoleUpgrade: (role: string, details: any) => Promise<void>;
+  // Switch to another approved role's dashboard, e.g. switchRole('bridger')
+  switchRole: (role: 'donor' | 'bridger' | 'pulse-leader' | 'admin') => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -64,10 +66,7 @@ const refreshUser = async () => {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const profile = await users.getMyProfile();
-      if (profile && profile.role) {
-        profile.role = normalizeRole(profile.role) as any;
-      }
-      setUser(profile);
+      setUser(profile ? applyRoles(profile, profile) : profile);
       return;
     } catch (error: any) {
       // authFetch has already tried a token refresh, so this means the session really ended
@@ -82,6 +81,17 @@ const refreshUser = async () => {
     }
   }
   setUser(null);
+};
+
+// The backend sends activeRole (the dashboard in use), approvedRoles (every role the user
+// may switch to) and role (kept for older code). Store the active one as user.role, so every
+// existing role check follows the dashboard the user switched to.
+const applyRoles = <T extends Record<string, any>>(target: T, source: any): T & { role: any; approvedRoles: any[] } => {
+  const role = normalizeRole(source?.activeRole || source?.role || 'donor');
+  const approved = Array.isArray(source?.approvedRoles) ? source.approvedRoles.map((r: string) => normalizeRole(r)) : [];
+  // Everyone keeps the donor dashboard, and the active role is always approved
+  const approvedRoles = Array.from(new Set(['donor', ...approved, role]));
+  return { ...target, role, approvedRoles };
 };
 
 const normalizeRole = (role: string): 'donor' | 'bridger' | 'pulse-leader' | 'admin' => {
@@ -188,18 +198,19 @@ const login = async (email: string, password: string, remember = false) => {
       }
     }
     
-    // ✅ Set the user in state using the normalized role
-    const normalizedRole = normalizeRole(result.data.user?.role || 'donor');
-    setUser({
+    // Set the user in state, using the active role to pick the dashboard
+    const loggedInUser = applyRoles({
       id: result.data.user.id,
       fullName: result.data.user.fullName || '',
       email: result.data.user.email,
       phoneNumber: '',
       gender: 'Male' as 'Male' | 'Female',
-      role: normalizedRole,
+      role: 'donor' as const,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    });
+    }, result.data.user);
+    setUser(loggedInUser);
+    const normalizedRole = loggedInUser.role;
     
     // ✅ Determine redirect path based on role
     const redirectMap: Record<string, string> = {
@@ -234,6 +245,13 @@ const login = async (email: string, password: string, remember = false) => {
     return roleUpgrades.request({ requestedRole: role as 'BRIDGER' | 'PULSE_LEADER', ...details });
   };
 
+  // Switch dashboards: the backend issues new tokens for the new role, then a full
+  // page load opens that role's dashboard with the new session
+  const switchRole = async (role: 'donor' | 'bridger' | 'pulse-leader' | 'admin') => {
+    await auth.switchRole(role.toUpperCase().replace(/-/g, '_') as 'DONOR' | 'BRIDGER' | 'PULSE_LEADER' | 'ADMIN');
+    window.location.href = roleRoutes[role] || '/DonorDashboard';
+  };
+
   // Context value
   const value = {
     user,
@@ -244,6 +262,7 @@ const login = async (email: string, password: string, remember = false) => {
     logout,
     refreshUser,
     requestRoleUpgrade,
+    switchRole,
   };
 
 

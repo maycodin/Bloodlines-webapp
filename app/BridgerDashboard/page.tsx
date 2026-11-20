@@ -22,6 +22,8 @@ import { toRequestCard, isClosedRequest, geocodeAddress } from "@/lib/requests";
 
 type Page = "home" | "blood-requests" | "analytics" | "profile";
 
+const ROLE_NAMES: Record<string, string> = { donor: 'Donor', bridger: 'Bridger', 'pulse-leader': 'Pulse Leader', admin: 'Admin' };
+
 // Bridger Dashboard Data Type
 interface BridgerDashboardData {
   activeRequests: number;
@@ -762,10 +764,17 @@ const Dashboard = () => {
                     )}
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-500">Role</p>
-                    <p className="inline-block px-2 py-1 text-xs font-semibold text-white bg-[#C91E1E] rounded-full">
-                      {profile?.role || 'Donor'}
-                    </p>
+                    <p className="text-sm font-medium text-gray-500">Roles</p>
+                    <div className="flex flex-wrap gap-1">
+                      {(authUser?.approvedRoles?.length ? authUser.approvedRoles : [authUser?.role || 'bridger']).map((role) => (
+                        <span
+                          key={role}
+                          className={`inline-block px-2 py-1 text-xs font-semibold rounded-full ${role === authUser?.role ? 'text-white bg-[#C91E1E]' : 'text-gray-700 bg-gray-100'}`}
+                        >
+                          {ROLE_NAMES[role] || role}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500">Member Since</p>

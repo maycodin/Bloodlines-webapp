@@ -118,7 +118,11 @@ export interface UserProfile {
   location?: string;
   latitude?: number;
   longitude?: number;
+  // The role whose dashboard the user is using right now (activeRole from the backend,
+  // falling back to role). The rest of the app checks this field.
   role: 'donor' | 'bridger' | 'pulse-leader' | 'admin';
+  // Every role the user has been approved for, e.g. ['donor', 'bridger']
+  approvedRoles?: ('donor' | 'bridger' | 'pulse-leader' | 'admin')[];
   profileCompletion?: number;
   lastDonationDate?: string;
   createdAt: string;
@@ -344,6 +348,24 @@ export const auth = {
     }
   },
   
+  // POST /auth/switch-role: change which approved role is active. The backend issues new
+  // tokens for the new role, which replace the current ones in the same storage.
+  switchRole: async (newRole: 'DONOR' | 'BRIDGER' | 'PULSE_LEADER' | 'ADMIN'): Promise<void> => {
+    const result = await authFetch('/auth/switch-role', {
+      method: 'POST',
+      body: JSON.stringify({ newRole }),
+    });
+    const payload = result?.data && typeof result.data === 'object' ? result.data : result;
+    const newToken = payload?.accessToken || payload?.access_token || payload?.token;
+    const newRefreshToken = payload?.refreshToken || payload?.refresh_token;
+    if (!newToken) {
+      throw new Error('Could not switch dashboards: the server did not return a new session.');
+    }
+    const storage = localStorage.getItem('token') || localStorage.getItem('refreshToken') ? localStorage : sessionStorage;
+    storage.setItem('token', newToken);
+    if (newRefreshToken) storage.setItem('refreshToken', newRefreshToken);
+  },
+
   logout: (): void => {
     clearAuthTokens();
     window.dispatchEvent(new Event('auth:logout'));
