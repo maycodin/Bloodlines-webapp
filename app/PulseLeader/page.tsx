@@ -6,6 +6,7 @@ import PulseLeaderNavbar from '@/components/PulseLeaderNavbar';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import DonationFulfillmentRate from '@/components/DonationFulfillment';
 import CriticalBloodRequestCard, { BloodRequestType } from '@/components/CriticalBloodRequestCard';
+import { toRequestCard } from '@/lib/requests';
 import Image from 'next/image';
 import ImpactActivitiesCards from '@/components/ImpactActivitiesCard';
 import DonorSearch from '@/components/DonorSearch';
@@ -115,17 +116,7 @@ const PulseLeaderDashboard = () => {
         
         // Transform recent blood requests to BloodRequestType format
         if (data.recentBloodRequests) {
-          const formattedRequests = data.recentBloodRequests.map((req: any) => ({
-            id: req._id || req.id,
-            status: req.priorityLevel === 'CRITICAL' ? 'Critical' : 
-                    req.priorityLevel === 'URGENT' ? 'Urgent' : 'Scheduled',
-            bloodType: req.bloodType,
-            unitsNeeded: req.unitsNeeded,
-            postedTime: new Date(req.createdAt).toLocaleString(),
-            contactNumber: req.contactPhone || 'Not provided',
-            patientCondition: req.patientCondition || 'No details provided',
-            showActions: true
-          }));
+          const formattedRequests = data.recentBloodRequests.map(toRequestCard);
           setBloodRequests(formattedRequests);
           setIsThereActiveRequest(formattedRequests.length > 0);
         }

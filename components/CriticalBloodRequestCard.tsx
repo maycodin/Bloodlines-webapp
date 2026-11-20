@@ -1,6 +1,7 @@
 "use client"
 import React from 'react';
-import { Clock, Phone, Users } from 'lucide-react';
+import { Clock, Phone, Users, MapPin, CalendarClock } from 'lucide-react';
+import { formatDateTime } from '@/lib/requests';
 import type { AssignedDonor } from '@/lib/api';
 
 export type BloodRequestType = {
@@ -15,6 +16,8 @@ export type BloodRequestType = {
   customStatusColor?: string;
   customBloodTypeColor?: string;
   timestamp?: Date; // For sorting or time calculations
+  createdAt?: string;
+  requiredByDate?: string;
   // Extra details from the backend, used by the Edit and Confirm donation panels
   priorityLevel?: 'CRITICAL' | 'URGENT' | 'SCHEDULED';
   requestStatus?: string; // PENDING, ACCEPTED, FULFILLED, CANCELLED, ...
@@ -76,6 +79,8 @@ const CriticalBloodRequestCard: React.FC<CriticalBloodRequestCardProps> = ({
   const showActions = request.showActions !== false && !isClosed && (!!onConfirm || !!onEdit);
   const donorCount = request.assignedDonors?.length ?? 0;
   const statusLabel = request.requestStatus ? STATUS_LABELS[request.requestStatus] || request.requestStatus : null;
+  const requiredBy = formatDateTime(request.requiredByDate);
+  const isOverdue = !isClosed && !!request.requiredByDate && new Date(request.requiredByDate).getTime() < Date.now();
 
   return (
     <div className={`border border-[#D8D6D6] mb-4 rounded-lg p-5 ${isClosed ? 'opacity-70' : ''} ${className}`}>
@@ -104,13 +109,38 @@ const CriticalBloodRequestCard: React.FC<CriticalBloodRequestCardProps> = ({
         )}
       </div>
 
+      {/* Facility and required-by date */}
+      {(request.facilityName || request.facilityAddress || requiredBy) && (
+        <div className="flex flex-col gap-1 mb-3 text-sm text-gray-700">
+          {(request.facilityName || request.facilityAddress) && (
+            <div className="flex items-start gap-2">
+              <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>
+                {request.facilityName && <span className="font-medium text-gray-900">{request.facilityName}</span>}
+                {request.facilityName && request.facilityAddress && ', '}
+                {request.facilityAddress}
+              </span>
+            </div>
+          )}
+          {requiredBy && (
+            <div className="flex items-center gap-2">
+              <CalendarClock className="w-4 h-4 shrink-0" />
+              <span>
+                Needed by {requiredBy}
+                {isOverdue && <span className="ml-2 text-xs font-medium text-[#C91E1E]">(date passed)</span>}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Info and Actions Section */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
         {/* Contact and Time Info */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 text-gray-700">
           <div className="flex items-center gap-2">
             <Clock className="w-5 h-5" />
-            <span className="text-sm">{request.postedTime}</span>
+            <span className="text-sm">Posted {request.postedTime}</span>
           </div>
 
           <div className="hidden sm:block text-gray-300">|</div>

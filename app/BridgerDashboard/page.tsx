@@ -18,6 +18,7 @@ import EditBloodRequestModal from "@/components/EditBloodRequestModal";
 import ConfirmDonationModal from "@/components/ConfirmDonationModal";
 import { bloodRequests, bridger, users, UserProfile } from "@/lib/api";
 import { useAuth } from "@/app/contexts/AuthContext";
+import { toRequestCard } from "@/lib/requests";
 
 type Page = "home" | "blood-requests" | "analytics" | "profile";
 
@@ -118,29 +119,9 @@ const Dashboard = () => {
     };
   });
 
-  // Turn the backend's request objects into the shape the request cards use
-  const formatRequests = (requests: any[]): BloodRequestType[] =>
-    requests.map((req) => ({
-      id: req._id || req.id,
-      status: req.priorityLevel === 'CRITICAL' ? 'Critical' : req.priorityLevel === 'URGENT' ? 'Urgent' : 'Scheduled',
-      bloodType: req.bloodType,
-      unitsNeeded: req.unitsNeeded,
-      postedTime: new Date(req.createdAt).toLocaleTimeString(),
-      contactNumber: req.contactPhone || 'Not provided',
-      patientCondition: req.patientCondition || 'No details provided',
-      showActions: true,
-      priorityLevel: req.priorityLevel,
-      requestStatus: req.status,
-      facilityName: req.facilityName,
-      facilityAddress: req.facilityAddress,
-      additionalNotes: req.additionalNotes,
-      assignedDonors: Array.isArray(req.assignedDonors) ? req.assignedDonors : [],
-      unitsConfirmed: req.unitsConfirmed,
-    }));
-
   const loadMyRequests = async () => {
     const myRequests = await bloodRequests.getMyRequests();
-    const formatted = formatRequests(myRequests);
+    const formatted = myRequests.map(toRequestCard);
     setLocalBloodRequests(formatted);
     setIsThereActiveRequest(formatted.length > 0);
   };
