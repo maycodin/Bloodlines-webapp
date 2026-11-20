@@ -214,8 +214,16 @@ const Dashboard = () => {
     setEditingRequest(localBloodRequests.find((request) => request.id === id) || null);
   };
 
+  // Reload the request list and the home figures (active count, fulfilment rate, chart)
+  // after anything that changes a request, so the numbers don't wait for a page refresh
   const refreshRequests = () =>
-    loadMyRequests().catch((err) => console.error('Failed to refresh blood requests:', err));
+    Promise.all([
+      loadMyRequests().catch((err) => console.error('Failed to refresh blood requests:', err)),
+      bridger
+        .getDashboard()
+        .then(setDashboardData)
+        .catch((err) => console.error('Failed to refresh dashboard figures:', err)),
+    ]);
 
   const startEditingProfile = () => {
     setProfileForm({
@@ -312,8 +320,8 @@ const Dashboard = () => {
         requiredByDate: '',
       });
       
-      // Refresh the requests list
-      await loadMyRequests().catch((err) => console.error('Failed to refresh blood requests:', err));
+      // Refresh the requests list and the home figures
+      await refreshRequests();
       
     } catch (error: any) {
       console.error('Failed to create request:', error);
