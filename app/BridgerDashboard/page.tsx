@@ -18,7 +18,7 @@ import EditBloodRequestModal from "@/components/EditBloodRequestModal";
 import ConfirmDonationModal from "@/components/ConfirmDonationModal";
 import { bloodRequests, bridger, users, UserProfile } from "@/lib/api";
 import { useAuth } from "@/app/contexts/AuthContext";
-import { toRequestCard } from "@/lib/requests";
+import { toRequestCard, isClosedRequest } from "@/lib/requests";
 
 type Page = "home" | "blood-requests" | "analytics" | "profile";
 
@@ -72,6 +72,7 @@ const Dashboard = () => {
   const [editingRequest, setEditingRequest] = useState<BloodRequestType | null>(null);
   const [confirmingRequest, setConfirmingRequest] = useState<BloodRequestType | null>(null);
   const [pageMessage, setPageMessage] = useState<Message | null>(null);
+  const [showPastRequests, setShowPastRequests] = useState(false);
 
   // Profile editing (PUT /users/me)
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -98,6 +99,10 @@ const Dashboard = () => {
     message: '',
     requestId: ''
   });
+
+  // Open requests stay in the active lists; fulfilled, cancelled and expired ones move to Past requests
+  const openRequests = localBloodRequests.filter((r) => !isClosedRequest(r));
+  const pastRequests = localBloodRequests.filter(isClosedRequest);
 
   // Blood inventory from /bridger/dashboard (inventorySummary). Empty until the backend records inventory.
   const bloodInventory = (dashboardData?.inventorySummary || []).map((item: any) => {
@@ -485,8 +490,8 @@ const Dashboard = () => {
                   </button>
                 </div>
                 
-                {localBloodRequests.length > 0 ? (
-                  localBloodRequests.map((request) => (
+                {openRequests.length > 0 ? (
+                  openRequests.map((request) => (
                     <CriticalBloodRequestCard key={request.id} request={request} onConfirm={handleConfirm} onEdit={handleEdit} />
                   ))
                 ) : (
@@ -581,7 +586,7 @@ const Dashboard = () => {
                     setEmergencyData({ requestId: e.target.value, bloodType: request?.bloodType || '', message: emergencyData.message });
                   }}>
                     <option value="">Select a request</option>
-                    {localBloodRequests.map((req) => (<option key={req.id} value={req.id}>{req.bloodType} - {req.unitsNeeded} units needed</option>))}
+                    {openRequests.map((req) => (<option key={req.id} value={req.id}>{req.bloodType} - {req.unitsNeeded} unit{req.unitsNeeded !== 1 ? 's' : ''} needed{req.facilityName ? ` at ${req.facilityName}` : ''}</option>))}
                   </select>
                 </div>
                 <div>
@@ -594,15 +599,15 @@ const Dashboard = () => {
               </button>
             </div>
 
-            {/* Existing Requests Section */}
+            {/* Open requests */}
             <div className="bg-white rounded-xl p-6 border border-[#D8D6D6] w-full mx-auto">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-gray-800">All Blood Requests</h2>
-                <span className="text-sm text-gray-500">{localBloodRequests.length} total</span>
+                <h2 className="text-xl font-bold text-gray-800">Open Blood Requests</h2>
+                <span className="text-sm text-gray-500">{openRequests.length} open</span>
               </div>
-              {localBloodRequests.length > 0 ? (
+              {openRequests.length > 0 ? (
                 <div className="space-y-4">
-                  {localBloodRequests.map((request) => (<CriticalBloodRequestCard key={request.id} request={request} onConfirm={handleConfirm} onEdit={handleEdit} />))}
+                  {openRequests.map((request) => (<CriticalBloodRequestCard key={request.id} request={request} onConfirm={handleConfirm} onEdit={handleEdit} />))}
                 </div>
               ) : (
                 <div className="text-center py-12">
@@ -610,9 +615,35 @@ const Dashboard = () => {
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                       <CheckCircle className="w-8 h-8 text-gray-300" />
                     </div>
-                    <h3 className="text-xl font-semibold text-gray-800 mb-2">No blood requests yet</h3>
-                    <p className="text-gray-600">Post your first blood request using the form above.</p>
+                    <h3 className="text-xl font-semibold text-gray-800 mb-2">No open blood requests</h3>
+                    <p className="text-gray-600">Post a blood request using the form above.</p>
                   </div>
+                </div>
+              )}
+            </div>
+
+            {/* Past requests: fulfilled, cancelled or expired */}
+            <div className="bg-white rounded-xl p-6 border border-[#D8D6D6] w-full mx-auto">
+              <button
+                type="button"
+                onClick={() => setShowPastRequests((open) => !open)}
+                className="w-full flex items-center justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  <History className="w-5 h-5 text-gray-500" />
+                  <h2 className="text-xl font-bold text-gray-800">Past Requests</h2>
+                </div>
+                <span className="text-sm text-gray-500">
+                  {pastRequests.length} past · {showPastRequests ? 'Hide' : 'Show'}
+                </span>
+              </button>
+              {showPastRequests && (
+                <div className="space-y-4 mt-6">
+                  {pastRequests.length > 0 ? (
+                    pastRequests.map((request) => (<CriticalBloodRequestCard key={request.id} request={request} />))
+                  ) : (
+                    <p className="text-sm text-gray-500">Fulfilled, cancelled and expired requests will show here.</p>
+                  )}
                 </div>
               )}
             </div>

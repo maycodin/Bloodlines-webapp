@@ -35,3 +35,9 @@ export const toRequestCard = (req: any): BloodRequestType => ({
   assignedDonors: Array.isArray(req.assignedDonors) ? req.assignedDonors : [],
   unitsConfirmed: req.unitsConfirmed,
 });
+
+// Requests in these states are finished: no more edits, confirmations or broadcasts
+export const CLOSED_REQUEST_STATUSES = ['FULFILLED', 'CANCELLED', 'EXPIRED'];
+
+export const isClosedRequest = (request: BloodRequestType): boolean =>
+  !!request.requestStatus && CLOSED_REQUEST_STATUSES.includes(request.requestStatus);

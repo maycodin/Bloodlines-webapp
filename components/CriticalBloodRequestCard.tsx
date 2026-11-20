@@ -1,7 +1,7 @@
 "use client"
 import React from 'react';
 import { Clock, Phone, Users, MapPin, CalendarClock } from 'lucide-react';
-import { formatDateTime } from '@/lib/requests';
+import { formatDateTime, CLOSED_REQUEST_STATUSES } from '@/lib/requests';
 import type { AssignedDonor } from '@/lib/api';
 
 export type BloodRequestType = {
@@ -27,9 +27,6 @@ export type BloodRequestType = {
   assignedDonors?: (AssignedDonor | string)[]; // live backend sends donor ids
   unitsConfirmed?: number;
 };
-
-// Requests in these states can no longer be edited or confirmed
-const CLOSED_STATUSES = ['FULFILLED', 'CANCELLED', 'EXPIRED'];
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'Waiting for donors',
@@ -75,7 +72,7 @@ const CriticalBloodRequestCard: React.FC<CriticalBloodRequestCardProps> = ({
     return 'text-[#C91E1E] border border-[#C91E1E]';
   };
 
-  const isClosed = !!request.requestStatus && CLOSED_STATUSES.includes(request.requestStatus);
+  const isClosed = !!request.requestStatus && CLOSED_REQUEST_STATUSES.includes(request.requestStatus);
   const showActions = request.showActions !== false && !isClosed && (!!onConfirm || !!onEdit);
   const donorCount = request.assignedDonors?.length ?? 0;
   const statusLabel = request.requestStatus ? STATUS_LABELS[request.requestStatus] || request.requestStatus : null;
