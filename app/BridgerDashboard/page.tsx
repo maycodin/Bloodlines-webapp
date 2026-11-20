@@ -660,9 +660,7 @@ const Dashboard = () => {
       
       case 'analytics':
         return (
-          <div className="flex items-center justify-center">
-            <BloodInventoryDashboard bloodRequests={localBloodRequests} handleConfirm={handleConfirm} handleEdit={handleEdit} setActivePage={handlePageChange} /> 
-          </div>
+          <BloodInventoryDashboard bloodRequests={localBloodRequests} dashboardData={dashboardData} />
         );
       
       case 'profile':
