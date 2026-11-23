@@ -87,3 +87,35 @@ export const geocodeAddress = async (address: string, facilityName?: string): Pr
   }
   return null;
 };
+
+// "just now", "5m ago", "3h ago", "2d ago", then the date
+export const timeAgo = (value?: string | Date | null): string => {
+  if (!value) return '';
+  const date = new Date(value);
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (isNaN(seconds)) return '';
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 7 * 86400) return `${Math.floor(seconds / 86400)}d ago`;
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+export const BLOOD_TYPES = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'];
+
+export type FulfilmentRow = { label: string; total: number; fulfilled: number; percent: number };
+
+const fulfilmentRow = (label: string, requests: BloodRequestType[]): FulfilmentRow => {
+  const fulfilled = requests.filter((r) => r.requestStatus === 'FULFILLED').length;
+  return { label, total: requests.length, fulfilled, percent: requests.length ? Math.round((fulfilled / requests.length) * 100) : 0 };
+};
+
+export const fulfilmentByBloodType = (requests: BloodRequestType[]): FulfilmentRow[] =>
+  BLOOD_TYPES.map((type) => fulfilmentRow(type, requests.filter((r) => r.bloodType === type)));
+
+export const fulfilmentByUrgency = (requests: BloodRequestType[]): FulfilmentRow[] =>
+  (['Critical', 'Urgent', 'Scheduled'] as const).map((level) => fulfilmentRow(level, requests.filter((r) => r.status === level)));
+
+// Mobile app wording: 75%+ met is Good, 40%+ Moderate, anything lower is High Pending
+export const fulfilmentLevel = (percent: number) =>
+  percent >= 75 ? { label: 'Good', tone: 'green' as const } : percent >= 40 ? { label: 'Moderate', tone: 'amber' as const } : { label: 'High Pending', tone: 'red' as const };
