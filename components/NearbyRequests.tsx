@@ -161,14 +161,14 @@ const NearbyRequests: React.FC<NearbyRequestsProps> = ({
                       </span>
 
                       <span className="text-sm text-gray-500">
-                        {req.unitsNeeded} units needed
+                        {req.unitsNeeded} unit{req.unitsNeeded !== 1 ? 's' : ''} needed
                       </span>
                     </div>
 
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-gray-500">
                       <div className="flex items-center gap-1">
                         <MapPin className="w-3 h-3" />
-                        {req.hospitalName || 'Hospital'}
+                        {req.hospitalName || req.facilityName || 'Hospital'}
                       </div>
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
@@ -182,7 +182,7 @@ const NearbyRequests: React.FC<NearbyRequestsProps> = ({
                       }`}
                     >
                       {urgency === 'critical' && "🚨 "}
-                      {req.patientCondition || req.instructions || 'No additional details provided.'}
+                      {req.patientCondition || req.instructions || req.additionalNotes || 'No additional details provided.'}
                     </div>
                   </div>
 

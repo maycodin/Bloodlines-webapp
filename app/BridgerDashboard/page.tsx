@@ -18,8 +18,11 @@ import EditBloodRequestModal from "@/components/EditBloodRequestModal";
 import ConfirmDonationModal from "@/components/ConfirmDonationModal";
 import { bloodRequests, bridger, users, UserProfile } from "@/lib/api";
 import { useAuth } from "@/app/contexts/AuthContext";
+import { toRequestCard, isClosedRequest, geocodeAddress } from "@/lib/requests";
 
 type Page = "home" | "blood-requests" | "analytics" | "profile";
+
+const ROLE_NAMES: Record<string, string> = { donor: 'Donor', bridger: 'Bridger', 'pulse-leader': 'Pulse Leader', admin: 'Admin' };
 
 // Bridger Dashboard Data Type
 interface BridgerDashboardData {
@@ -71,6 +74,7 @@ const Dashboard = () => {
   const [editingRequest, setEditingRequest] = useState<BloodRequestType | null>(null);
   const [confirmingRequest, setConfirmingRequest] = useState<BloodRequestType | null>(null);
   const [pageMessage, setPageMessage] = useState<Message | null>(null);
+  const [showPastRequests, setShowPastRequests] = useState(false);
 
   // Profile editing (PUT /users/me)
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -90,6 +94,9 @@ const Dashboard = () => {
     requiredByDate: '',
   });
   const [requestMessage, setRequestMessage] = useState<Message | null>(null);
+  // Optional: the Bridger can share their current location instead of relying on the address
+  const [sharedCoordinates, setSharedCoordinates] = useState<[number, number] | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
   const [emergencyMessage, setEmergencyMessage] = useState<Message | null>(null);
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [emergencyData, setEmergencyData] = useState({
@@ -97,6 +104,10 @@ const Dashboard = () => {
     message: '',
     requestId: ''
   });
+
+  // Open requests stay in the active lists; fulfilled, cancelled and expired ones move to Past requests
+  const openRequests = localBloodRequests.filter((r) => !isClosedRequest(r));
+  const pastRequests = localBloodRequests.filter(isClosedRequest);
 
   // Blood inventory from /bridger/dashboard (inventorySummary). Empty until the backend records inventory.
   const bloodInventory = (dashboardData?.inventorySummary || []).map((item: any) => {
@@ -118,38 +129,18 @@ const Dashboard = () => {
     };
   });
 
-  // Turn the backend's request objects into the shape the request cards use
-  const formatRequests = (requests: any[]): BloodRequestType[] =>
-    requests.map((req) => ({
-      id: req._id || req.id,
-      status: req.priorityLevel === 'CRITICAL' ? 'Critical' : req.priorityLevel === 'URGENT' ? 'Urgent' : 'Scheduled',
-      bloodType: req.bloodType,
-      unitsNeeded: req.unitsNeeded,
-      postedTime: new Date(req.createdAt).toLocaleTimeString(),
-      contactNumber: req.contactPhone || 'Not provided',
-      patientCondition: req.patientCondition || 'No details provided',
-      showActions: true,
-      priorityLevel: req.priorityLevel,
-      requestStatus: req.status,
-      facilityName: req.facilityName,
-      facilityAddress: req.facilityAddress,
-      additionalNotes: req.additionalNotes,
-      assignedDonors: Array.isArray(req.assignedDonors) ? req.assignedDonors : [],
-      unitsConfirmed: req.unitsConfirmed,
-    }));
-
   const loadMyRequests = async () => {
     const myRequests = await bloodRequests.getMyRequests();
-    const formatted = formatRequests(myRequests);
+    const formatted = myRequests.map(toRequestCard);
     setLocalBloodRequests(formatted);
     setIsThereActiveRequest(formatted.length > 0);
   };
 
-  // Ask the browser for the bridger's location; the backend needs it to match nearby donors
+  // Ask the browser for the Bridger's current location (optional, used only when they choose it)
   const getCurrentCoordinates = () =>
     new Promise<[number, number]>((resolve, reject) => {
       if (!navigator.geolocation) {
-        reject(new Error('Your browser does not support location access, which is needed to post a request.'));
+        reject(new Error('Your browser does not support location access.'));
         return;
       }
       navigator.geolocation.getCurrentPosition(
@@ -158,13 +149,40 @@ const Dashboard = () => {
           reject(
             new Error(
               geoError.code === geoError.PERMISSION_DENIED
-                ? 'Location access is needed so nearby donors can be matched. Please allow it in your browser and try again.'
-                : 'Could not get your location. Please try again.'
+                ? 'Location access was blocked. You can still post: the facility address will be used instead.'
+                : 'Could not get your location. You can still post: the facility address will be used instead.'
             )
           ),
         { enableHighAccuracy: true, timeout: 15000 }
       );
     });
+
+  const handleUseMyLocation = async () => {
+    setIsLocating(true);
+    setRequestMessage(null);
+    try {
+      setSharedCoordinates(await getCurrentCoordinates());
+    } catch (err: any) {
+      setRequestMessage({ type: 'error', text: err.message });
+    } finally {
+      setIsLocating(false);
+    }
+  };
+
+  // Work out where the facility is, so the backend can match donors near it.
+  // 1. The location the Bridger chose to share, 2. the saved location of an earlier request
+  // for the same facility, 3. the facility address looked up on the map.
+  const resolveFacilityCoordinates = async (): Promise<[number, number] | null> => {
+    if (sharedCoordinates) return sharedCoordinates;
+    const sameFacility = localBloodRequests.find(
+      (r) =>
+        r.facilityCoordinates &&
+        r.facilityName?.trim().toLowerCase() === requestData.facilityName.trim().toLowerCase() &&
+        r.facilityAddress?.trim().toLowerCase() === requestData.facilityAddress.trim().toLowerCase()
+    );
+    if (sameFacility?.facilityCoordinates) return sameFacility.facilityCoordinates;
+    return geocodeAddress(requestData.facilityAddress, requestData.facilityName);
+  };
 
   // Fetch dashboard data
   useEffect(() => {
@@ -228,8 +246,16 @@ const Dashboard = () => {
     setEditingRequest(localBloodRequests.find((request) => request.id === id) || null);
   };
 
+  // Reload the request list and the home figures (active count, fulfilment rate, chart)
+  // after anything that changes a request, so the numbers don't wait for a page refresh
   const refreshRequests = () =>
-    loadMyRequests().catch((err) => console.error('Failed to refresh blood requests:', err));
+    Promise.all([
+      loadMyRequests().catch((err) => console.error('Failed to refresh blood requests:', err)),
+      bridger
+        .getDashboard()
+        .then(setDashboardData)
+        .catch((err) => console.error('Failed to refresh dashboard figures:', err)),
+    ]);
 
   const startEditingProfile = () => {
     setProfileForm({
@@ -296,7 +322,14 @@ const Dashboard = () => {
     }
     
     try {
-      const coordinates = await getCurrentCoordinates();
+      const coordinates = await resolveFacilityCoordinates();
+      if (!coordinates) {
+        setRequestMessage({
+          type: 'error',
+          text: "We couldn't find that facility address on the map. Please add more detail (street, area, city), or use \"Use my current location\" if you're at the facility.",
+        });
+        return;
+      }
 
       await bloodRequests.create({
         bloodType: requestData.bloodType,
@@ -319,15 +352,15 @@ const Dashboard = () => {
         unitsNeeded: '',
         priorityLevel: '',
         contactPhone: '',
-        // Keep the facility details: a bridger usually posts from the same hospital
+        // Keep the facility details (and any shared location): a Bridger usually posts from the same hospital
         facilityName: requestData.facilityName,
         facilityAddress: requestData.facilityAddress,
         patientCondition: '',
         requiredByDate: '',
       });
       
-      // Refresh the requests list
-      await loadMyRequests().catch((err) => console.error('Failed to refresh blood requests:', err));
+      // Refresh the requests list and the home figures
+      await refreshRequests();
       
     } catch (error: any) {
       console.error('Failed to create request:', error);
@@ -504,8 +537,8 @@ const Dashboard = () => {
                   </button>
                 </div>
                 
-                {localBloodRequests.length > 0 ? (
-                  localBloodRequests.map((request) => (
+                {openRequests.length > 0 ? (
+                  openRequests.map((request) => (
                     <CriticalBloodRequestCard key={request.id} request={request} onConfirm={handleConfirm} onEdit={handleEdit} />
                   ))
                 ) : (
@@ -578,9 +611,22 @@ const Dashboard = () => {
                 <button type="submit" disabled={isLoading} className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50">
                   {isLoading ? "Creating..." : "Create Blood Request"}
                 </button>
-                <p className="text-xs text-gray-500 text-center">
-                  Your browser will ask to share your location, so donors near your facility can be matched.
-                </p>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-gray-500">
+                  <span className="flex-1">
+                    {sharedCoordinates
+                      ? 'Using your current location to match nearby donors.'
+                      : 'Nearby donors are matched using the facility address. If you are at the facility, you can share your current location instead.'}
+                  </span>
+                  {sharedCoordinates ? (
+                    <button type="button" onClick={() => setSharedCoordinates(null)} className="text-[#C91E1E] font-medium underline">
+                      Use the address instead
+                    </button>
+                  ) : (
+                    <button type="button" onClick={handleUseMyLocation} disabled={isLocating} className="flex items-center gap-1 text-[#C91E1E] font-medium underline disabled:opacity-50">
+                      <MapPin className="w-3 h-3" /> {isLocating ? 'Getting location...' : 'Use my current location'}
+                    </button>
+                  )}
+                </div>
               </form>
             </div>
 
@@ -600,7 +646,7 @@ const Dashboard = () => {
                     setEmergencyData({ requestId: e.target.value, bloodType: request?.bloodType || '', message: emergencyData.message });
                   }}>
                     <option value="">Select a request</option>
-                    {localBloodRequests.map((req) => (<option key={req.id} value={req.id}>{req.bloodType} - {req.unitsNeeded} units needed</option>))}
+                    {openRequests.map((req) => (<option key={req.id} value={req.id}>{req.bloodType} - {req.unitsNeeded} unit{req.unitsNeeded !== 1 ? 's' : ''} needed{req.facilityName ? ` at ${req.facilityName}` : ''}</option>))}
                   </select>
                 </div>
                 <div>
@@ -613,15 +659,15 @@ const Dashboard = () => {
               </button>
             </div>
 
-            {/* Existing Requests Section */}
+            {/* Open requests */}
             <div className="bg-white rounded-xl p-6 border border-[#D8D6D6] w-full mx-auto">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-gray-800">All Blood Requests</h2>
-                <span className="text-sm text-gray-500">{localBloodRequests.length} total</span>
+                <h2 className="text-xl font-bold text-gray-800">Open Blood Requests</h2>
+                <span className="text-sm text-gray-500">{openRequests.length} open</span>
               </div>
-              {localBloodRequests.length > 0 ? (
+              {openRequests.length > 0 ? (
                 <div className="space-y-4">
-                  {localBloodRequests.map((request) => (<CriticalBloodRequestCard key={request.id} request={request} onConfirm={handleConfirm} onEdit={handleEdit} />))}
+                  {openRequests.map((request) => (<CriticalBloodRequestCard key={request.id} request={request} onConfirm={handleConfirm} onEdit={handleEdit} />))}
                 </div>
               ) : (
                 <div className="text-center py-12">
@@ -629,9 +675,35 @@ const Dashboard = () => {
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                       <CheckCircle className="w-8 h-8 text-gray-300" />
                     </div>
-                    <h3 className="text-xl font-semibold text-gray-800 mb-2">No blood requests yet</h3>
-                    <p className="text-gray-600">Post your first blood request using the form above.</p>
+                    <h3 className="text-xl font-semibold text-gray-800 mb-2">No open blood requests</h3>
+                    <p className="text-gray-600">Post a blood request using the form above.</p>
                   </div>
+                </div>
+              )}
+            </div>
+
+            {/* Past requests: fulfilled, cancelled or expired */}
+            <div className="bg-white rounded-xl p-6 border border-[#D8D6D6] w-full mx-auto">
+              <button
+                type="button"
+                onClick={() => setShowPastRequests((open) => !open)}
+                className="w-full flex items-center justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  <History className="w-5 h-5 text-gray-500" />
+                  <h2 className="text-xl font-bold text-gray-800">Past Requests</h2>
+                </div>
+                <span className="text-sm text-gray-500">
+                  {pastRequests.length} past · {showPastRequests ? 'Hide' : 'Show'}
+                </span>
+              </button>
+              {showPastRequests && (
+                <div className="space-y-4 mt-6">
+                  {pastRequests.length > 0 ? (
+                    pastRequests.map((request) => (<CriticalBloodRequestCard key={request.id} request={request} />))
+                  ) : (
+                    <p className="text-sm text-gray-500">Fulfilled, cancelled and expired requests will show here.</p>
+                  )}
                 </div>
               )}
             </div>
@@ -640,9 +712,7 @@ const Dashboard = () => {
       
       case 'analytics':
         return (
-          <div className="flex items-center justify-center">
-            <BloodInventoryDashboard bloodRequests={localBloodRequests} handleConfirm={handleConfirm} handleEdit={handleEdit} setActivePage={handlePageChange} /> 
-          </div>
+          <BloodInventoryDashboard bloodRequests={localBloodRequests} dashboardData={dashboardData} />
         );
       
       case 'profile':
@@ -694,10 +764,17 @@ const Dashboard = () => {
                     )}
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-500">Role</p>
-                    <p className="inline-block px-2 py-1 text-xs font-semibold text-white bg-[#C91E1E] rounded-full">
-                      {profile?.role || 'Donor'}
-                    </p>
+                    <p className="text-sm font-medium text-gray-500">Roles</p>
+                    <div className="flex flex-wrap gap-1">
+                      {(authUser?.approvedRoles?.length ? authUser.approvedRoles : [authUser?.role || 'bridger']).map((role) => (
+                        <span
+                          key={role}
+                          className={`inline-block px-2 py-1 text-xs font-semibold rounded-full ${role === authUser?.role ? 'text-white bg-[#C91E1E]' : 'text-gray-700 bg-gray-100'}`}
+                        >
+                          {ROLE_NAMES[role] || role}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500">Member Since</p>

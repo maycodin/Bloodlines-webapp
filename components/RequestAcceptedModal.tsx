@@ -5,6 +5,7 @@ import { useState } from "react";
 import { X, MapPin, Clock, Phone, Navigation } from "lucide-react";
 import { BloodRequest } from "@/lib/api";
 import InlineMessage, { Message } from "@/components/InlineMessage";
+import { formatDateTime } from "@/lib/requests";
 
 interface RequestAcceptedModalProps {
   request: BloodRequest;
@@ -41,28 +42,19 @@ const RequestAcceptedModal: React.FC<RequestAcceptedModalProps> = ({
     }
   };
   
-  // Map priority level to display text
-  const getPriorityDisplay = (priority: string) => {
-    const map: Record<string, string> = {
-      'CRITICAL': 'Critical',
-      'URGENT': 'Urgent',
-      'HIGH': 'High',
-      'MEDIUM': 'Medium',
-      'LOW': 'Low'
-    };
-    return map[priority] || priority;
+  // The donor endpoints send the urgency as "priority"; the blood-request endpoints call it "priorityLevel"
+  const priority = (request.priorityLevel || request.priority || '').toUpperCase();
+
+  const PRIORITY_LABELS: Record<string, string> = {
+    CRITICAL: 'Critical',
+    URGENT: 'Urgent',
+    SCHEDULED: 'Scheduled',
   };
-  
-  // Get priority color
-  const getPriorityColor = (priority: string) => {
-    const map: Record<string, string> = {
-      'CRITICAL': 'text-red-600 bg-red-50 border-red-200',
-      'URGENT': 'text-orange-600 bg-orange-50 border-orange-200',
-      'HIGH': 'text-yellow-600 bg-yellow-50 border-yellow-200',
-      'MEDIUM': 'text-blue-600 bg-blue-50 border-blue-200',
-      'LOW': 'text-gray-600 bg-gray-50 border-gray-200'
-    };
-    return map[priority] || 'text-gray-600 bg-gray-50 border-gray-200';
+
+  const PRIORITY_COLORS: Record<string, string> = {
+    CRITICAL: 'text-red-600 bg-red-50 border-red-200',
+    URGENT: 'text-orange-600 bg-orange-50 border-orange-200',
+    SCHEDULED: 'text-green-700 bg-green-50 border-green-200',
   };
 
   return (
@@ -86,10 +78,12 @@ const RequestAcceptedModal: React.FC<RequestAcceptedModalProps> = ({
               <span className="text-2xl font-bold">{request.bloodType}</span>
             </div>
             <div>
-              <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getPriorityColor(request.priorityLevel || 'MEDIUM')}`}>
-                {getPriorityDisplay(request.priorityLevel || 'MEDIUM')}
-              </span>
-              <p className="text-sm text-gray-500 mt-1">{request.unitsNeeded} units needed</p>
+              {PRIORITY_LABELS[priority] && (
+                <span className={`px-3 py-1 rounded-full text-sm font-medium border ${PRIORITY_COLORS[priority]}`}>
+                  {PRIORITY_LABELS[priority]}
+                </span>
+              )}
+              <p className="text-sm text-gray-500 mt-1">{request.unitsNeeded} unit{request.unitsNeeded !== 1 ? 's' : ''} needed</p>
             </div>
           </div>
           
@@ -110,9 +104,9 @@ const RequestAcceptedModal: React.FC<RequestAcceptedModalProps> = ({
           <div className="space-y-2">
             <h3 className="font-semibold text-gray-900">Patient Condition</h3>
             <p className="text-sm text-gray-700 p-3 bg-blue-50 rounded-lg border border-blue-100">
-              {request.patientCondition || request.instructions || 'No additional details provided.'}
+              {request.patientCondition || request.instructions || request.additionalNotes || 'No additional details provided.'}
             </p>
-            {request.additionalNotes && (
+            {request.additionalNotes && request.additionalNotes !== (request.patientCondition || request.instructions) && (
               <p className="text-sm text-gray-600 mt-2">
                 <span className="font-medium">Additional Notes:</span> {request.additionalNotes}
               </p>
@@ -123,11 +117,11 @@ const RequestAcceptedModal: React.FC<RequestAcceptedModalProps> = ({
           <div className="flex items-center gap-4 text-sm text-gray-500">
             <div className="flex items-center gap-1">
               <Clock className="w-4 h-4" />
-              <span>Posted: {new Date(request.createdAt).toLocaleDateString()}</span>
+              <span>Posted: {formatDateTime(request.createdAt) || 'Date not available'}</span>
             </div>
             {request.requiredByDate && (
               <div className="flex items-center gap-1">
-                <span>Required by: {new Date(request.requiredByDate).toLocaleDateString()}</span>
+                <span>Required by: {formatDateTime(request.requiredByDate)}</span>
               </div>
             )}
           </div>

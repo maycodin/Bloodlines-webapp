@@ -44,8 +44,12 @@ const RoleUpgradeForm = ({
   className = "mt-6 bg-white rounded-lg border border-[#D8D6D6] p-6",
 }: RoleUpgradeFormProps) => {
   const { requestRoleUpgrade, user } = useAuth();
-  // Don't offer the role the user already has
-  const currentRole = user?.role ? CURRENT_ROLE_VALUE[user.role] : undefined;
+  // Don't offer roles the user already has (the active one or any other approved role)
+  const heldRoles = [user?.role, ...(user?.approvedRoles || [])]
+    .map((role) => (role ? CURRENT_ROLE_VALUE[role] : undefined))
+    .filter(Boolean);
+  const canRequestPulseLeader = !heldRoles.includes("PULSE_LEADER");
+  const canRequestBridger = !heldRoles.includes("BRIDGER");
 
   const [selectedRole, setSelectedRole] = useState<RoleValue | "">("");
   const [communityName, setCommunityName] = useState("");
@@ -121,6 +125,17 @@ const RoleUpgradeForm = ({
     }
   };
 
+  if (!canRequestPulseLeader && !canRequestBridger) {
+    return (
+      <div className={className}>
+        <h3 className="text-xl font-bold text-gray-900">Your Roles</h3>
+        <p className="text-sm text-gray-500 mt-1">
+          You already have every role you can apply for. Use the profile menu at the top to switch dashboards.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className={className}>
       <div className="flex items-start gap-3 mb-4">
@@ -155,8 +170,8 @@ const RoleUpgradeForm = ({
             disabled={isSubmitting}
           >
             <option value="" disabled>Select role type</option>
-            {currentRole !== "PULSE_LEADER" && <option value="PULSE_LEADER">Pulse Leader</option>}
-            {currentRole !== "BRIDGER" && <option value="BRIDGER">Bridger (Hospital Staff)</option>}
+            {canRequestPulseLeader && <option value="PULSE_LEADER">Pulse Leader</option>}
+            {canRequestBridger && <option value="BRIDGER">Bridger (Hospital Staff)</option>}
           </select>
           {selectedRole && (
             <p className="text-xs text-gray-500 mt-1">{ROLE_HINTS[selectedRole]}</p>
