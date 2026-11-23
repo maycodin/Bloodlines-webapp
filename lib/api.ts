@@ -125,6 +125,11 @@ export interface UserProfile {
   approvedRoles?: ('donor' | 'bridger' | 'pulse-leader' | 'admin')[];
   profileCompletion?: number;
   lastDonationDate?: string;
+  avatarUrl?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  closestHospital?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -190,6 +195,8 @@ export interface DonorProfile {
   isAvailable: boolean;
   emergencyContact?: string;
   emergencyContactPhone?: string;
+  closestHospital?: string;
+  avatarUrl?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -212,6 +219,8 @@ export type DonorProfileInput = Partial<{
   isAvailable: boolean;
   emergencyContact: string;
   emergencyContactPhone: string;
+  closestHospital: string;
+  avatarUrl: string;
 }>;
 
 export interface PaginatedResponse<T> {
@@ -463,7 +472,25 @@ export const auth = {
 };
 
 // ============ Donor Module ============
+// The photo field isn't in the API docs' responses yet, so accept the likely names
+const pickAvatar = (profile: any): string | undefined =>
+  profile?.avatarUrl || profile?.avatar || profile?.profileImage || profile?.profilePicture || profile?.photoUrl || profile?.donorProfile?.avatarUrl || undefined;
+
+export type FeedbackRating = 'TERRIBLE' | 'BAD' | 'OKAY' | 'GOOD' | 'AMAZING';
+
 export const donor = {
+  // POST /donor/availability rejects its documented { status } body, so this saves through the profile instead
+  setAvailability: async (isAvailable: boolean): Promise<DonorProfile> => {
+    return authFetch('/donor/profile', { method: 'POST', body: JSON.stringify({ isAvailable }) });
+  },
+
+  submitFeedback: async (requestId: string, rating: FeedbackRating, comments?: string): Promise<void> => {
+    await authFetch('/donor/feedback', {
+      method: 'POST',
+      body: JSON.stringify({ requestId, rating, ...(comments?.trim() ? { comments: comments.trim() } : {}) }),
+    });
+  },
+
   getDashboardSummary: async (): Promise<{
     totalDonations: number;
     livesImpacted: number;
@@ -479,7 +506,7 @@ export const donor = {
 
   getProfile: async (): Promise<DonorProfile> => {
     const profile = await authFetch('/donor/profile');
-    return { ...profile, id: profile?.id ?? profile?._id };
+    return { ...profile, id: profile?.id ?? profile?._id, avatarUrl: pickAvatar(profile) };
   },
   
   updateProfile: async (data: DonorProfileInput): Promise<DonorProfile> => {
@@ -523,7 +550,7 @@ export const users = {
   getMyProfile: async (): Promise<UserProfile> => {
     const profile = await authFetch('/users/me');
     // MongoDB returns _id; the rest of the app expects id
-    return { ...profile, id: profile?.id ?? profile?._id };
+    return { ...profile, id: profile?.id ?? profile?._id, avatarUrl: pickAvatar(profile) };
   },
   
   // GET /users/{id} - Get another user's profile by ID
@@ -548,6 +575,92 @@ export const users = {
       body: JSON.stringify(body),
     });
   },
+};
+
+export interface AppNotification {
+  _id: string;
+  title: string;
+  body?: string;
+  type?: string;
+  read: boolean;
+  createdAt: string;
+  data?: Record<string, any>;
+}
+
+export interface NotificationPreferences {
+  emergencyAlerts: boolean;
+  donationReminders: boolean;
+  communityUpdates: boolean;
+  emailEnabled: boolean;
+  smsEnabled: boolean;
+  pushEnabled: boolean;
+}
+
+export interface PrivacySettings {
+  locationSharingEnabled: boolean;
+  anonymous: boolean;
+  dataProcessingConsent?: boolean;
+}
+
+export const notifications = {
+  list: async (page = 1, limit = 20): Promise<{ data: AppNotification[]; unreadCount: number; hasMore: boolean }> => {
+    const result = await authFetch(`/notifications?page=${page}&limit=${limit}`);
+    return {
+      data: toList(result),
+      unreadCount: typeof result?.unreadCount === 'number' ? result.unreadCount : 0,
+      hasMore: !!result?.hasMore,
+    };
+  },
+
+  markRead: async (id: string): Promise<void> => {
+    await authFetch(`/notifications/${id}/read`, { method: 'PUT' });
+  },
+
+  markAllRead: async (): Promise<void> => {
+    await authFetch('/notifications/read-all', { method: 'PUT' });
+  },
+
+  getPreferences: async (): Promise<NotificationPreferences> => {
+    return authFetch('/notifications/preferences');
+  },
+
+  updatePreferences: async (changes: Partial<NotificationPreferences>): Promise<NotificationPreferences> => {
+    return authFetch('/notifications/preferences', { method: 'PUT', body: JSON.stringify(changes) });
+  },
+};
+
+export const privacy = {
+  get: async (): Promise<PrivacySettings> => {
+    return authFetch('/users/me/privacy');
+  },
+
+  update: async (changes: Partial<PrivacySettings> & { latitude?: number; longitude?: number }): Promise<PrivacySettings> => {
+    return authFetch('/users/me/privacy', { method: 'PUT', body: JSON.stringify(changes) });
+  },
+};
+
+// Signs the upload with GET /donor/profile/upload-signature, uploads the image straight to
+// Cloudinary, then saves the returned URL on the profile
+export const uploadAvatar = async (file: File): Promise<string> => {
+  const { signature, timestamp, folder, apiKey, cloudName } = await authFetch('/donor/profile/upload-signature');
+  const form = new FormData();
+  form.append('file', file);
+  form.append('api_key', apiKey);
+  form.append('timestamp', String(timestamp));
+  form.append('signature', signature);
+  if (folder) form.append('folder', folder);
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+    method: 'POST',
+    body: form,
+  });
+  const uploaded = await response.json().catch(() => null);
+  if (!response.ok || !uploaded?.secure_url) {
+    throw new Error(uploaded?.error?.message || 'Could not upload the photo. Please try another image.');
+  }
+
+  await donor.updateProfile({ avatarUrl: uploaded.secure_url });
+  return uploaded.secure_url;
 };
 
 export const bridger = {
