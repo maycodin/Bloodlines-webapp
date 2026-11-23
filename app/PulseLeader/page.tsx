@@ -11,7 +11,7 @@ import Image from 'next/image';
 import ImpactActivitiesCards from '@/components/ImpactActivitiesCard';
 import DonorSearch from '@/components/DonorSearch';
 import PulseAnalytics from '@/components/PulseAnalytics';
-import RoleUpgradeForm from "@/components/RoleUpgradeForm";
+import AddRoleSection from "@/components/profile/AddRoleSection";
 import { useAuth } from "@/app/contexts/AuthContext";
 import { users, UserProfile, pulseLeader } from '@/lib/api';
 
@@ -531,7 +531,7 @@ const PulseLeaderDashboard = () => {
             </div>
 
             {/* Role Upgrade Request Section */}
-            <RoleUpgradeForm />
+            <div className="mt-6"><AddRoleSection /></div>
 
             <div className="mt-4 bg-white rounded-lg border border-[#D8D6D6] p-5">
               <div className="font-bold">Notification Preferences</div>

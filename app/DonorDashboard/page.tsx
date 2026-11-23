@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { TriangleAlert, History, Users, Loader2 } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { TriangleAlert, History, Users } from "lucide-react";
 import DonorNavbar from "@/components/DonorNavbar";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import SuccessModal from "@/components/SuccessModal";
@@ -9,9 +9,15 @@ import CompleteProfile from "@/components/CompleteProfile";
 import DonorOverview from "@/components/DonorOverview";
 import NearbyRequests from "@/components/NearbyRequests";
 import InlineMessage, { Message } from "@/components/InlineMessage";
-import RoleUpgradeForm from "@/components/RoleUpgradeForm";
-import DonorProfileForm from "@/components/DonorProfileForm";
-import { donor, UserProfile, BloodRequest, users, bloodRequests, roleUpgrades } from "@/lib/api";
+import AccountProfile from "@/components/profile/AccountProfile";
+import AddRoleSection from "@/components/profile/AddRoleSection";
+import { DashboardTheme } from "@/app/contexts/ThemeContext";
+import { donor, UserProfile, BloodRequest, users, bloodRequests } from "@/lib/api";
+import { Journey, loadJourneys, saveJourneys } from "@/lib/journey";
+import DonationJourney from "@/components/donor/DonationJourney";
+import GiveFeedbackModal from "@/components/donor/GiveFeedbackModal";
+import MyAcceptedRequests from "@/components/donor/MyAcceptedRequests";
+import { useToast } from "@/components/ui/Toast";
 import { useAuth } from "@/app/contexts/AuthContext";
 
 type Page = "home" | "resources" | "profile";
@@ -20,6 +26,7 @@ type DonationStatus = "Donated" | "Deferred";
 
 type DonationRecord = {
   id: string;
+  feedbackGiven: boolean;
   hospital: string;
   date: string;
   type: string;
@@ -77,25 +84,40 @@ const DonorDashboard = () => {
 });
   
   const [acceptMessage, setAcceptMessage] = useState<Message | null>(null);
+  const [openEditProfile, setOpenEditProfile] = useState(false);
+  const { showToast } = useToast();
+  const [journeys, setJourneys] = useState<Journey[]>([]);
+  const [openJourneyId, setOpenJourneyId] = useState<string | null>(null);
+  const [feedbackFor, setFeedbackFor] = useState<{ requestId: string; hospital?: string } | null>(null);
+  const [feedbackSent, setFeedbackSent] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (authUser?.id) setJourneys(loadJourneys(authUser.id));
+  }, [authUser?.id]);
+
+  const updateJourneys = useCallback(
+    (update: (current: Journey[]) => Journey[]) =>
+      setJourneys((current) => {
+        const next = update(current);
+        saveJourneys(authUser?.id, next);
+        return next;
+      }),
+    [authUser?.id]
+  );
+
+  const updateJourney = (requestId: string, changes: Partial<Journey>) =>
+    updateJourneys((current) => current.map((j) => (j.request.id === requestId ? { ...j, ...changes } : j)));
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const due = journeys.filter((j) => j.reminderAt && new Date(j.reminderAt).getTime() <= Date.now());
+      if (due.length === 0) return;
+      due.forEach((j) => showToast(`Reminder: you're donating at ${j.request.facilityName || j.request.hospitalName || "the hospital"}`, "info"));
+      updateJourneys((current) => current.map((j) => (due.some((d) => d.request.id === j.request.id) ? { ...j, reminderAt: undefined } : j)));
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [journeys, showToast, updateJourneys]);
   
-  // Role upgrade history
-  const [upgradeHistory, setUpgradeHistory] = useState<any[]>([]);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-
-  const fetchUpgradeHistory = async () => {
-  setIsLoadingHistory(true);
-  try {
-    const history: any = await roleUpgrades.getMyHistory();
-    // The backend returns a plain list; also accept a { data: [...] } wrapper
-    setUpgradeHistory(Array.isArray(history) ? history : history?.data || []);
-  } catch (error) {
-    console.error('Failed to fetch upgrade history:', error);
-  } finally {
-    setIsLoadingHistory(false);
-  }
-};
-
- 
   // Loads everything on the Home tab. Pass { silent: true } to refresh without the loading spinner.
   const fetchDashboardData = async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!silent) setLoading(true);
@@ -195,6 +217,7 @@ const DonorDashboard = () => {
         const formattedHistory = dashboardData.donationHistory.map((item: any, index: number) => ({
           // Ids are MongoDB strings; fall back to the position so React keys stay unique
           id: String(item.id || item._id || `donation-${index}`),
+          feedbackGiven: !!item.donorFeedback,
           hospital: item.hospitalName || item.facilityName || 'Hospital',
           date: new Date(item.donatedAt).toLocaleDateString(),
           type: item.bloodType || 'Blood',
@@ -228,12 +251,6 @@ const DonorDashboard = () => {
   }, []);
 
   useEffect(() => {
-    if (activePage === 'profile') {
-      fetchUpgradeHistory();
-    }
-  }, [activePage]);
-
-  useEffect(() => {
   if (!authUser) return;
   
   const userRole = authUser.role?.toLowerCase() || 'donor';
@@ -260,7 +277,20 @@ const DonorDashboard = () => {
     setActivePage("home");
   };
 
-  const profileCompletion = profile?.profileCompletion || 85;
+  const isConfirmed = (requestId: string) => donationHistory.some((record) => record.id === requestId && record.status === 'Donated');
+  const hasFeedback = (requestId: string) =>
+    feedbackSent.includes(requestId) || donationHistory.some((record) => record.id === requestId && record.feedbackGiven);
+  const openJourney = journeys.find((j) => j.request.id === openJourneyId);
+
+  const changeAvailability = async (next: "Available" | "Busy") => {
+    try {
+      await donor.setAvailability(next === "Available");
+      setAvailability(next);
+      showToast(next === "Available" ? "You're now available to donate" : "You're set as busy. You won't be matched for now.");
+    } catch (err: any) {
+      showToast(err?.message || "Could not update your availability.", "error");
+    }
+  };
   const donorName = profile?.fullName?.split(" ")[0] || "Donor";
   const donorBloodType = profile?.bloodGroup || "Not set";
   const nearbyRequestsCount = nearbyRequests.length;
@@ -300,7 +330,7 @@ const DonorDashboard = () => {
         
         return (
           <>
-            <div className="bg-[#398C53] border border-[#D8D6D6] h-32 rounded-xl p-3 md:p-8">
+            <div className="bg-[#1E7B3A] rounded-2xl p-5 md:p-8">
               <h2 className="text-xl md:text-2xl text-white font-bold">
                 {dashboardSummary?.welcomeMessage || `Welcome back, ${donorName}! 👋`}
               </h2>
@@ -310,12 +340,23 @@ const DonorDashboard = () => {
               </p>
             </div>
 
-          <CompleteProfile 
-  percentage={profile?.profileCompletion || 0}
-  completedFields={completionDetails.completedFields}
-  remainingFields={completionDetails.remainingFields}
-  onUpdate={() => setActivePage('profile')}
-/>
+            <MyAcceptedRequests
+              journeys={journeys}
+              isConfirmed={isConfirmed}
+              onView={setOpenJourneyId}
+              onRemove={(requestId) => updateJourneys((current) => current.filter((j) => j.request.id !== requestId))}
+            />
+
+            {(profile?.profileCompletion ?? 0) < 100 && (
+              <CompleteProfile
+                percentage={profile?.profileCompletion || 0}
+                remainingFields={completionDetails.remainingFields}
+                onUpdate={() => {
+                  setOpenEditProfile(true);
+                  setActivePage('profile');
+                }}
+              />
+            )}
             
             <DonorOverview 
               totalDonations={dashboardSummary?.totalDonations || 0}
@@ -323,6 +364,7 @@ const DonorDashboard = () => {
               badgesEarned={dashboardSummary?.badges?.length || achievements.length}
               bloodType={profile?.bloodGroup || "Not set"}
               availability={availability}
+              onAvailabilityChange={changeAvailability}
               nextEligibility={nextEligibility}
               achievements={achievements}
               donorName={donorName}
@@ -336,18 +378,17 @@ const DonorDashboard = () => {
             <NearbyRequests 
               requests={nearbyRequests} 
               loading={loading}
-              onAccept={async (requestId) => {
+              onAccept={async (request) => {
                 try {
-                  // Call the accept endpoint
-                  // Throws if the backend rejects it, so reaching the next line means it worked
-                  await bloodRequests.accept(requestId);
-                  setNearbyRequests(prev => prev.filter(req => req.id !== requestId));
-                  setAcceptMessage({ type: 'success', text: 'Request accepted successfully! The hospital will be notified.' });
-                  return true;
+                  await bloodRequests.accept(request.id);
+                  setNearbyRequests((prev) => prev.filter((req) => req.id !== request.id));
+                  updateJourneys((current) => [
+                    { request, acceptedAt: new Date().toISOString() },
+                    ...current.filter((j) => j.request.id !== request.id),
+                  ]);
+                  setOpenJourneyId(request.id);
                 } catch (error: any) {
-                  console.error('Failed to accept request:', error);
                   setAcceptMessage({ type: 'error', text: error?.message || 'Failed to accept request. Please try again.' });
-                  return false;
                 }
               }}
             />
@@ -392,9 +433,22 @@ const DonorDashboard = () => {
                           <p className="text-sm font-medium text-gray-800">{record.hospital}</p>
                           <p className="text-xs text-gray-500">{record.date} · {record.type}</p>
                         </div>
-                        <span className={`text-xs px-4 py-1 rounded-md ${donationStatusStyles[record.status]}`}>
-                          {record.status}
-                        </span>
+                        <div className="flex flex-col items-end gap-2">
+                          <span className={`text-xs px-4 py-1 rounded-md ${donationStatusStyles[record.status]}`}>
+                            {record.status}
+                          </span>
+                          {record.status === 'Donated' &&
+                            (record.feedbackGiven || feedbackSent.includes(record.id) ? (
+                              <span className="text-xs text-gray-500">Feedback sent</span>
+                            ) : (
+                              <button
+                                onClick={() => setFeedbackFor({ requestId: record.id, hospital: record.hospital })}
+                                className="text-xs font-medium text-[#C91E1E] hover:underline"
+                              >
+                                Give feedback
+                              </button>
+                            ))}
+                        </div>
                       </div>
                     ))
                   )}
@@ -438,68 +492,15 @@ const DonorDashboard = () => {
         );
 
       case "profile":
-
-       return (
-    <div className="mx-auto max-w-2xl">
-      {/* Profile Information Section */}
-      <DonorProfileForm onSaved={() => fetchDashboardData({ silent: true })} />
-
-      {/* Role Upgrade Request Section */}
-      <RoleUpgradeForm onSubmitted={fetchUpgradeHistory} />
-
-      {/* Upgrade History Section */}
-      <div className="mt-6 bg-white rounded-lg border border-[#D8D6D6] p-6">
-        <h3 className="text-lg font-bold text-gray-900 mb-4">Upgrade Request History</h3>
-        
-        {isLoadingHistory ? (
-          <div className="flex items-center justify-center py-6">
-            <Loader2 className="w-6 h-6 animate-spin text-red-600" />
-          </div>
-        ) : upgradeHistory.length === 0 ? (
-          <p className="text-sm text-gray-500 text-center py-6">
-            No upgrade requests yet. Submit your first request above.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {upgradeHistory.map((request) => (
-              <div key={request.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <div>
-                  <p className="font-medium text-gray-900">
-                    {request.requestedRole === 'PULSE_LEADER' ? 'Pulse Leader' : 
-                    request.requestedRole === 'BRIDGER' ? 'Bridger' : 
-                    request.requestedRole === 'ADMIN' ? 'Admin' : request.requestedRole}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Submitted: {new Date(request.createdAt).toLocaleDateString()}
-                  </p>
-                  {request.reason && (
-                    <p className="text-xs text-gray-600 mt-1 truncate max-w-xs">
-                      {request.reason.length > 60 ? request.reason.substring(0, 60) + '...' : request.reason}
-                    </p>
-                  )}
-                </div>
-                <div className="text-right">
-                  <span className={`text-xs px-3 py-1 rounded-full font-medium ${
-                    request.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
-                    request.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
-                    'bg-yellow-100 text-yellow-700'
-                  }`}>
-                    {request.status || 'PENDING'}
-                  </span>
-                  {request.approvedAt && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      {request.status === 'APPROVED' ? 'Approved: ' : 'Rejected: '}
-                      {new Date(request.approvedAt).toLocaleDateString()}
-                    </p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+        return (
+          <AccountProfile
+            startEditing={openEditProfile}
+            onEditingChange={(editing) => !editing && setOpenEditProfile(false)}
+            onProfileChanged={() => fetchDashboardData({ silent: true })}
+          >
+            <AddRoleSection />
+          </AccountProfile>
+        );
 
       default:
         return (
@@ -516,11 +517,41 @@ const DonorDashboard = () => {
   return (
     <>
       <DonorNavbar
-        onPageChange={(page) => setActivePage(page as Page)}
+        onPageChange={(page) => {
+          setOpenEditProfile(false);
+          setActivePage(page as Page);
+        }}
         activePage={activePage}
       />
 
-      <div className="m-8">{renderPageContent()}</div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-28 md:pb-10">{renderPageContent()}</main>
+
+      {openJourney && (
+        <DonationJourney
+          journey={openJourney}
+          donationConfirmed={isConfirmed(openJourney.request.id)}
+          feedbackGiven={hasFeedback(openJourney.request.id)}
+          onUpdate={(changes) => updateJourney(openJourney.request.id, changes)}
+          onArrived={async () => {
+            await bloodRequests.arrivalAlert(openJourney.request.id);
+          }}
+          onGiveFeedback={() =>
+            setFeedbackFor({ requestId: openJourney.request.id, hospital: openJourney.request.facilityName || openJourney.request.hospitalName })
+          }
+          onClose={() => setOpenJourneyId(null)}
+        />
+      )}
+      {feedbackFor && (
+        <GiveFeedbackModal
+          requestId={feedbackFor.requestId}
+          hospitalName={feedbackFor.hospital}
+          onClose={() => setFeedbackFor(null)}
+          onSubmitted={() => {
+            setFeedbackSent((sent) => [...sent, feedbackFor.requestId]);
+            setFeedbackFor(null);
+          }}
+        />
+      )}
 
       <SuccessModal
         isOpen={showSuccessModal}
@@ -534,9 +565,11 @@ const DonorDashboard = () => {
 // Wrap the component with ProtectedRoute for role-based access
 export default function DonorDashboardPage() {
   return (
-    <ProtectedRoute allowedRoles={['donor', 'bridger', 'pulse-leader', 'admin']}>
-      <DonorDashboard />
-    </ProtectedRoute>
+    <DashboardTheme>
+      <ProtectedRoute allowedRoles={['donor', 'bridger', 'pulse-leader', 'admin']}>
+        <DonorDashboard />
+      </ProtectedRoute>
+    </DashboardTheme>
     
   );
 }

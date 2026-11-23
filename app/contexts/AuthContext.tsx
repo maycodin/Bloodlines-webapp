@@ -2,6 +2,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { queueToast } from '@/components/ui/Toast';
 import { auth, users, roleUpgrades, UserProfile } from '@/lib/api';
 import { useRouter, usePathname } from 'next/navigation';
 
@@ -16,6 +17,7 @@ interface AuthContextType {
   requestRoleUpgrade: (role: string, details: any) => Promise<void>;
   // Switch to another approved role's dashboard, e.g. switchRole('bridger')
   switchRole: (role: 'donor' | 'bridger' | 'pulse-leader' | 'admin') => Promise<void>;
+  patchUser: (changes: Partial<UserProfile>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -249,8 +251,12 @@ const login = async (email: string, password: string, remember = false) => {
   // page load opens that role's dashboard with the new session
   const switchRole = async (role: 'donor' | 'bridger' | 'pulse-leader' | 'admin') => {
     await auth.switchRole(role.toUpperCase().replace(/-/g, '_') as 'DONOR' | 'BRIDGER' | 'PULSE_LEADER' | 'ADMIN');
+    const roleName = { donor: 'Donor', bridger: 'Bridger', 'pulse-leader': 'Pulse Leader', admin: 'Admin' }[role];
+    queueToast(`Switched to ${roleName} mode`);
     window.location.href = roleRoutes[role] || '/DonorDashboard';
   };
+
+  const patchUser = (changes: Partial<UserProfile>) => setUser((current) => (current ? { ...current, ...changes } : current));
 
   // Context value
   const value = {
@@ -263,6 +269,7 @@ const login = async (email: string, password: string, remember = false) => {
     refreshUser,
     requestRoleUpgrade,
     switchRole,
+    patchUser,
   };
 
 

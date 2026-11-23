@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, Bell, Menu, X, User, Home, BarChart3, LogOut, Droplets } from 'lucide-react';
-import RoleSwitcher from '@/components/RoleSwitcher';
+import { Search, Menu, X, User, Home, BarChart3, LogOut, Droplets } from 'lucide-react';
+import RoleBadge from '@/components/RoleBadge';
 import Image from 'next/image';
 
 interface PulseLeaderNavbarProps {
@@ -80,10 +80,7 @@ const PulseLeaderNavbar: React.FC<PulseLeaderNavbarProps> = ({
 
           {/* User Section */}
           <div className="flex items-center gap-4">
-            <button className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-            </button>
+            <RoleBadge />
 
             {/* User Profile Dropdown */}
             <div className="relative">
@@ -109,7 +106,6 @@ const PulseLeaderNavbar: React.FC<PulseLeaderNavbarProps> = ({
                     <User className="w-4 h-4" />
                     Profile
                   </button>
-                  <RoleSwitcher />
                   <button
                     onClick={handleLogout}
                     className="flex items-center gap-3 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition"
@@ -150,7 +146,6 @@ const PulseLeaderNavbar: React.FC<PulseLeaderNavbarProps> = ({
                 {item.label}
               </button>
             ))}
-            <RoleSwitcher variant="mobile" />
             <div className="border-t border-gray-200 pt-2 mt-2">
               <button
                 onClick={handleLogout}

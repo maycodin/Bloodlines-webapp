@@ -3,7 +3,7 @@
 "use client";
 
 import { useState } from "react";
-import { CircleArrowUp, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useAuth } from "@/app/contexts/AuthContext";
 import InlineMessage, { Message } from "@/components/InlineMessage";
 
@@ -125,29 +125,10 @@ const RoleUpgradeForm = ({
     }
   };
 
-  if (!canRequestPulseLeader && !canRequestBridger) {
-    return (
-      <div className={className}>
-        <h3 className="text-xl font-bold text-gray-900">Your Roles</h3>
-        <p className="text-sm text-gray-500 mt-1">
-          You already have every role you can apply for. Use the profile menu at the top to switch dashboards.
-        </p>
-      </div>
-    );
-  }
+  if (!canRequestPulseLeader && !canRequestBridger) return null;
 
   return (
     <div className={className}>
-      <div className="flex items-start gap-3 mb-4">
-        <CircleArrowUp className="w-6 h-6 text-[#1B59F8] flex-shrink-0 mt-1" />
-        <div>
-          <h3 className="text-xl font-bold text-gray-900">Upgrade Your Role</h3>
-          <p className="text-sm text-gray-500 mt-1">
-            Apply to become a Pulse Leader or Bridger
-          </p>
-        </div>
-      </div>
-
       <InlineMessage message={message} onClose={() => setMessage(null)} />
 
       <form onSubmit={handleSubmit} className="space-y-5">
