@@ -1,5 +1,5 @@
-import React from "react";
-import { Droplets, Heart, Trophy, Medal, Zap, Users } from "lucide-react";
+import React, { useState } from "react";
+import { Droplets, Heart, Trophy } from "lucide-react";
 import Image from "next/image";
 
 type Availability = "Available" | "Busy";
@@ -29,6 +29,7 @@ interface DonorOverviewProps {
   badgesEarned?: number;
   bloodType?: string;
   availability?: "Available" | "Busy";
+  onAvailabilityChange?: (next: "Available" | "Busy") => Promise<void>;
   nextEligibility?: string;
   achievements?: Achievement[];
   donorName?: string;
@@ -67,11 +68,17 @@ const getLevelTitle = (level: number): string => {
   return titles[level] || "Bronze Donor";
 };
 
-// Achievement icon map
-const achievementIcons: Record<AchievementType, React.ReactNode> = {
-  lifesaver: <Medal className="w-4 h-4 text-yellow-500 mt-1" />,
-  responder: <Zap className="w-4 h-4 text-orange-400 mt-1" />,
-  hero: <Users className="w-4 h-4 text-blue-500 mt-1" />,
+const achievementEmoji = (title: string) => {
+  const name = title.toLowerCase();
+  if (name.includes("bronze")) return "🥉";
+  if (name.includes("silver")) return "🥈";
+  if (name.includes("gold")) return "🥇";
+  if (name.includes("platinum") || name.includes("diamond")) return "💎";
+  if (name.includes("pioneer") || name.includes("joined")) return "🌱";
+  if (name.includes("respond") || name.includes("quick")) return "⚡";
+  if (name.includes("emergency")) return "🚨";
+  if (name.includes("hero") || name.includes("community") || name.includes("recruit")) return "🤝";
+  return "🏅";
 };
 
 // Availability badge styles
@@ -80,39 +87,34 @@ const availabilityStyles: Record<Availability, string> = {
   Busy: "bg-[#FBB13D] text-white",
 };
 
-// Default achievements (fallback if none from API)
-const defaultAchievements: Achievement[] = [
-  {
-    type: "lifesaver",
-    title: "Bronze Lifesaver",
-    description: "5 donations completed",
-  },
-  {
-    type: "responder",
-    title: "Quick Responder",
-    description: "Average response time under 10 minutes",
-  },
-  {
-    type: "hero",
-    title: "Community Hero",
-    description: "Helped during emergency shortage",
-  },
-];
-
 const DonorOverview: React.FC<DonorOverviewProps> = ({ 
   totalDonations = 0,
   livesSaved: livesSavedProp,
   badgesEarned = 0,
   bloodType = "Not set",
   availability = "Available",
+  onAvailabilityChange,
   nextEligibility = "Not scheduled",
   achievements: achievementsProp,
   donorName = "Donor"
 }) => {
+  const [savingAvailability, setSavingAvailability] = useState(false);
   const level = getLevelFromDonations(totalDonations);
   const levelTitle = getLevelTitle(level);
   const livesSaved = livesSavedProp !== undefined ? livesSavedProp : getLivesSaved(totalDonations);
-  const achievements = achievementsProp || defaultAchievements;
+  const nextLevelName = getLevelTitle(Math.min(level + 1, 5)).replace("Donor", "Lifesaver");
+  const donationsToNextLevel = Math.max(getDonationsForLevel(level + 1) - totalDonations, 0);
+  const achievements: { emoji: string; title: string; description: string }[] = [
+    ...(achievementsProp || []).map((item) => ({ emoji: achievementEmoji(item.title), ...item })),
+    {
+      emoji: "⚡",
+      title: "Response Status",
+      description: `Responded to ${totalDonations} donation${totalDonations === 1 ? "" : "s"}`,
+    },
+    ...(level < 5
+      ? [{ emoji: "🥈", title: `Next Rank: ${nextLevelName}`, description: `Need ${donationsToNextLevel} more donation${donationsToNextLevel === 1 ? "" : "s"} to rank up` }]
+      : []),
+  ];
 
   return (
     <div className="flex justify-center gap-4 mt-6 flex-wrap">
@@ -126,13 +128,19 @@ const DonorOverview: React.FC<DonorOverviewProps> = ({
 
           <div className="flex justify-between">
             <p className="text-gray-600">Availability</p>
-            <span
-              className={`text-sm px-3 py-1 rounded-md ${
-                availabilityStyles[availability]
-              }`}
+<button
+              type="button"
+              disabled={!onAvailabilityChange || savingAvailability}
+              onClick={async () => {
+                if (!onAvailabilityChange) return;
+                setSavingAvailability(true);
+                await onAvailabilityChange(availability === "Available" ? "Busy" : "Available").finally(() => setSavingAvailability(false));
+              }}
+              title={onAvailabilityChange ? `Tap to set yourself as ${availability === "Available" ? "busy" : "available"}` : undefined}
+              className={`text-sm px-3 py-1 rounded-md disabled:opacity-70 ${availabilityStyles[availability]}`}
             >
-              {availability}
-            </span>
+              {savingAvailability ? "Saving..." : availability}
+            </button>
           </div>
 
           <div className="flex justify-between">
@@ -235,9 +243,9 @@ const DonorOverview: React.FC<DonorOverviewProps> = ({
 
         <div className="flex flex-col gap-4">
           {achievements.length > 0 ? (
-            achievements.slice(0, 4).map((item, index) => (
-              <div key={index} className="flex gap-3 group hover:bg-gray-50 p-2 rounded-lg transition-colors">
-                {achievementIcons[item.type] || <Medal className="w-4 h-4 text-gray-400 mt-1" />}
+            achievements.slice(0, 5).map((item, index) => (
+              <div key={index} className="flex gap-3 p-2 rounded-lg">
+                <span className="text-xl leading-none mt-0.5" aria-hidden="true">{item.emoji}</span>
                 <div>
                   <p className="text-sm font-medium">{item.title}</p>
                   <p className="text-xs text-gray-500">{item.description}</p>

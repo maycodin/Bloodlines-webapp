@@ -1,10 +1,9 @@
 // components/NearbyRequests.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Bell, MapPin, Clock } from "lucide-react";
-import RequestAcceptedModal from "./RequestAcceptedModal";
-import { BloodRequest, bloodRequests } from "@/lib/api";
+import { BloodRequest } from "@/lib/api";
 
 type Urgency = "Critical" | "Urgent" | "Scheduled";
 
@@ -12,7 +11,7 @@ interface NearbyRequestsProps {
   requests?: BloodRequest[];
   loading?: boolean;
   // Return false if accepting failed, so the details panel doesn't open
-  onAccept?: (requestId: string) => Promise<boolean> | boolean | void;
+  onAccept?: (request: BloodRequest) => Promise<unknown> | void;
 }
 
 // Style maps (urgency-driven)
@@ -62,31 +61,16 @@ const NearbyRequests: React.FC<NearbyRequestsProps> = ({
   onAccept 
 }) => {
   const [hiddenIds, setHiddenIds] = useState<string[]>([]);
-  const [selectedRequest, setSelectedRequest] = useState<BloodRequest | null>(null);
-
-  // Lock body scroll while modal is open
-  useEffect(() => {
-    document.body.style.overflow = selectedRequest ? "hidden" : "auto";
-    return () => {
-      document.body.style.overflow = "auto";
-    };
-  }, [selectedRequest]);
 
   const visibleRequests = requests.filter((r) => !hiddenIds.includes(r.id));
 
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
   const handleAccept = async (request: BloodRequest) => {
-    if (!onAccept) {
-      setSelectedRequest(request);
-      return;
-    }
+    if (!onAccept) return;
     setAcceptingId(request.id);
-    const accepted = await onAccept(request.id);
+    await onAccept(request);
     setAcceptingId(null);
-    if (accepted !== false) {
-      setSelectedRequest(request);
-    }
   };
 
   if (loading) {
@@ -210,16 +194,6 @@ const NearbyRequests: React.FC<NearbyRequestsProps> = ({
         )}
       </div>
 
-      {/* Modal - rendered when a request is selected */}
-      {selectedRequest && (
-        <RequestAcceptedModal
-          request={selectedRequest}
-          onClose={() => setSelectedRequest(null)}
-          onArrivalAlert={async (requestId) => {
-            await bloodRequests.arrivalAlert(requestId);
-          }}
-        />
-      )}
     </>
   );
 };
